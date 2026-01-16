@@ -1,0 +1,246 @@
+// 全局样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+}
+
+// 变量
+$primary-color: #ff6b35;
+$sidebar-bg: #1f2937;
+$sidebar-text: #9ca3af;
+$sidebar-active: #ff6b35;
+
+// 布局样式
+.main-layout {
+  display: flex;
+  height: 100%;
+
+  .sidebar {
+    width: 220px;
+    background: $sidebar-bg;
+    color: $sidebar-text;
+    display: flex;
+    flex-direction: column;
+
+    .logo {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: bold;
+      color: $primary-color;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0;
+
+      .el-menu {
+        border-right: none;
+        background: transparent;
+
+        .el-menu-item, .el-sub-menu__title {
+          color: $sidebar-text;
+          
+          &:hover {
+            background: rgba(255, 255, 255, 0.05);
+          }
+        }
+
+        .el-menu-item.is-active {
+          background: rgba($primary-color, 0.1);
+          color: $primary-color;
+        }
+      }
+    }
+  }
+
+  .main-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .header {
+      height: 60px;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+
+      .tabs {
+        display: flex;
+        gap: 10px;
+      }
+
+      .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+    }
+
+    .main-content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: #f5f7fa;
+    }
+  }
+}
+
+// 卡片样式
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+  }
+}
+
+// 统计卡片
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+
+  .stat-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+    .icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+
+      &.primary { background: rgba($primary-color, 0.1); color: $primary-color; }
+      &.success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+      &.warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+      &.info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    }
+
+    .content {
+      .label {
+        font-size: 14px;
+        color: #6b7280;
+        margin-bottom: 5px;
+      }
+      .value {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+    }
+  }
+}
+
+// 表格样式
+.el-table {
+  .cell {
+    padding: 8px 12px;
+  }
+}
+
+// 状态标签
+.status-tag {
+  &.success { background: #d1fae5; color: #065f46; }
+  &.warning { background: #fef3c7; color: #92400e; }
+  &.danger { background: #fee2e2; color: #991b1b; }
+  &.info { background: #dbeafe; color: #1e40af; }
+}
+
+// 表单布局
+.form-section {
+  margin-bottom: 24px;
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 16px;
+    padding-left: 10px;
+    border-left: 3px solid $primary-color;
+  }
+}
+
+// 登录页面
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+
+  .login-box {
+    width: 400px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 40px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+      
+      h1 {
+        font-size: 28px;
+        color: $primary-color;
+        margin-bottom: 8px;
+      }
+      
+      p {
+        color: #6b7280;
+        font-size: 14px;
+      }
+    }
+
+    .login-form {
+      .el-input__wrapper {
+        padding: 0 15px;
+        height: 45px;
+      }
+
+      .el-button {
+        height: 45px;
+        font-size: 16px;
+      }
+    }
+  }
+}

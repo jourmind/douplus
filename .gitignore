@@ -1,0 +1,95 @@
+# =====================
+# 通用忽略规则
+# =====================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*~
+
+# =====================
+# IDE
+# =====================
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.code-workspace
+
+# =====================
+# Java / Maven
+# =====================
+douplus-server/target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/
+mvnw
+mvnw.cmd
+
+# =====================
+# Node / npm
+# =====================
+douplus-web/node_modules/
+douplus-web/dist/
+*.local
+.npm
+.eslintcache
+.stylelintcache
+
+# =====================
+# 环境配置
+# =====================
+.env
+.env.local
+.env.*.local
+*.env
+
+# =====================
+# 日志
+# =====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =====================
+# 测试覆盖率
+# =====================
+coverage/
+*.lcov
+.nyc_output
+
+# =====================
+# 敏感信息（重要！）
+# =====================
+# 生产配置
+application-prod.yml
+application-production.yml
+# 密钥文件
+*.key
+*.pem
+*.p12
+# 配置文件备份
+*.bak
+
+# =====================
+# Docker
+# =====================
+.docker/
+docker-compose.override.yml
+
+# =====================
+# 其他
+# =====================
+*.zip
+*.tar.gz
+*.rar
