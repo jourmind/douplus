@@ -50,6 +50,10 @@ douplus-web/dist/
 .env.local
 .env.*.local
 *.env
+douplus-web/.env
+douplus-web/.env.local
+douplus-web/.env.*.local
+!.env.example
 
 # =====================
 # 日志
@@ -93,3 +97,9 @@ docker-compose.override.yml
 *.zip
 *.tar.gz
 *.rar
+
+# 服务运行文件
+*.pid
+logs/
+stdout.log
+nohup.out
