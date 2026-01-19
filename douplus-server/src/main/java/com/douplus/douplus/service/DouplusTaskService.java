@@ -72,9 +72,13 @@ public class DouplusTaskService extends ServiceImpl<DouplusTaskMapper, DouplusTa
             DouplusTask task = new DouplusTask();
             task.setUserId(userId);
             task.setAccountId(request.getAccountId());
+            task.setTargetAccountId(request.getTargetAccountId());
             task.setItemId(request.getItemId());
             task.setTaskType(request.getTaskType() != null ? request.getTaskType() : 1);
             task.setTargetType(request.getTargetType() != null ? request.getTargetType() : 1);
+            task.setWantType(request.getWantType() != null ? request.getWantType() : "CONTENT_HEAT");
+            task.setObjective(request.getObjective() != null ? request.getObjective() : "LIKE_COMMENT");
+            task.setStrategy(request.getStrategy() != null ? request.getStrategy() : "GUARANTEE_PLAY");
             task.setDuration(request.getDuration() != null ? request.getDuration() : 24);
             task.setBudget(request.getBudget());
             task.setActualCost(BigDecimal.ZERO);
@@ -95,6 +99,97 @@ public class DouplusTaskService extends ServiceImpl<DouplusTaskMapper, DouplusTa
                 userId, count, account.getNickname(), request.getItemId(), request.getBudget());
         
         return tasks;
+    }
+
+    /**
+     * 批量创建多个不同任务
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<DouplusTask> createMultipleTasks(Long userId, List<CreateTaskRequest> requests) {
+        List<DouplusTask> allTasks = new ArrayList<>();
+        
+        for (CreateTaskRequest request : requests) {
+            // 1. 验证投放密码
+            if (!userService.validateInvestPassword(userId, request.getInvestPassword())) {
+                throw new BusinessException(ResultCode.INVEST_PASSWORD_ERROR);
+            }
+
+            // 2. 验证账号归属
+            DouyinAccount account = accountService.getByIdAndUserId(request.getAccountId(), userId);
+            if (account == null) {
+                throw new BusinessException(ResultCode.ACCOUNT_NOT_FOUND);
+            }
+            if (account.getStatus() != 1) {
+                throw new BusinessException(ResultCode.ACCOUNT_TOKEN_EXPIRED);
+            }
+
+            // 3. 风控检查（针对单个任务）
+            validateSingleTaskRiskControl(userId, account, request);
+
+            // 4. 创建任务（支持投放笔数）
+            int taskCount = request.getCount() != null ? request.getCount() : 1;
+            for (int i = 0; i < taskCount; i++) {
+                DouplusTask task = new DouplusTask();
+                task.setUserId(userId);
+                task.setAccountId(request.getAccountId());
+                task.setTargetAccountId(request.getTargetAccountId());
+                task.setItemId(request.getItemId());
+                task.setTaskType(request.getTaskType() != null ? request.getTaskType() : 1);
+                task.setTargetType(request.getTargetType() != null ? request.getTargetType() : 1);
+                task.setWantType(request.getWantType() != null ? request.getWantType() : "CONTENT_HEAT");
+                task.setObjective(request.getObjective() != null ? request.getObjective() : "LIKE_COMMENT");
+                task.setStrategy(request.getStrategy() != null ? request.getStrategy() : "GUARANTEE_PLAY");
+                task.setDuration(request.getDuration() != null ? request.getDuration() : 24);
+                task.setBudget(request.getBudget());
+                task.setActualCost(BigDecimal.ZERO);
+                task.setExpectedExposure(0);
+                task.setActualExposure(0);
+                task.setStatus(DouplusTask.STATUS_WAIT);
+                task.setRetryCount(0);
+                task.setMaxRetry(3);
+                task.setScheduledTime(request.getScheduledTime() != null ? 
+                        request.getScheduledTime() : LocalDateTime.now());
+                task.setTargetConfig(request.getTargetConfig());
+                
+                save(task);
+                allTasks.add(task);
+            }
+            
+        }
+
+        log.info("用户{}批量创建了{}个投放任务", userId, allTasks.size());
+        
+        return allTasks;
+    }
+
+    /**
+     * 对单个任务进行风控检查
+     */
+    private void validateSingleTaskRiskControl(Long userId, DouyinAccount account, CreateTaskRequest request) {
+        BigDecimal budget = request.getBudget();
+
+        // 1. 检查单笔金额上限
+        if (budget.compareTo(maxSingleAmount) > 0) {
+            throw new BusinessException(ResultCode.BUDGET_EXCEED_LIMIT, 
+                    "单笔投放金额不能超过" + maxSingleAmount + "元");
+        }
+
+        // 2. 检查账号单日限额
+        BigDecimal dailyUsed = baseMapper.sumDailyBudget(account.getId(), LocalDate.now());
+        BigDecimal accountDailyLimit = account.getDailyLimit() != null ? 
+                account.getDailyLimit() : systemDailyLimit;
+        
+        if (dailyUsed.add(budget).compareTo(accountDailyLimit) > 0) {
+            throw new BusinessException(ResultCode.DAILY_LIMIT_EXCEED, 
+                    "账号今日投放已达限额，当前已用：" + dailyUsed + "元，限额：" + accountDailyLimit + "元");
+        }
+
+        // 3. 检查用户总限额
+        BigDecimal userDailyUsed = baseMapper.sumUserDailyBudget(userId, LocalDate.now());
+        if (userDailyUsed.add(budget).compareTo(systemDailyLimit) > 0) {
+            throw new BusinessException(ResultCode.DAILY_LIMIT_EXCEED, 
+                    "今日投放已达系统限额，当前已用：" + userDailyUsed + "元");
+        }
     }
 
     /**

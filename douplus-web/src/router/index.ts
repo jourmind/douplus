@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '账号管理', icon: 'User' }
       },
       {
+        path: 'account/:id/dashboard',
+        name: 'AccountDashboard',
+        component: () => import('@/views/account/Dashboard.vue'),
+        meta: { title: '账户概览' }
+      },
+      {
         path: 'douplus',
         name: 'Douplus',
         redirect: '/douplus/create',
@@ -41,7 +47,7 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'records',
             name: 'DouplusRecords',
-            component: () => import('@/views/douplus/Records.vue'),
+            component: () => import('@/views/douplus/History.vue'),
             meta: { title: '投放记录' }
           }
         ]

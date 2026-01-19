@@ -27,6 +27,11 @@ public class DouyinAccount extends BaseEntity {
     private String openId;
 
     /**
+     * 广告主ID
+     */
+    private String advertiserId;
+
+    /**
      * 抖音UnionID
      */
     private String unionId;

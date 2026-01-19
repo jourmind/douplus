@@ -60,4 +60,14 @@ request.interceptors.response.use(
   }
 )
 
+// 封装 GET 请求
+export function get<T>(url: string, params?: Record<string, any>): Promise<T> {
+  return request.get(url, { params }).then(res => res.data)
+}
+
+// 封装 POST 请求
+export function post<T>(url: string, data?: any): Promise<T> {
+  return request.post(url, data).then(res => res.data)
+}
+
 export default request

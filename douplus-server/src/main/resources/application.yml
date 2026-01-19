@@ -42,11 +42,9 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
-  # Quartz定时任务配置
+  # Quartz定时任务配置（使用内存存储）
   quartz:
-    job-store-type: jdbc
-    jdbc:
-      initialize-schema: never
+    job-store-type: memory
     properties:
       org:
         quartz:
@@ -57,11 +55,6 @@ spring:
             class: org.quartz.simpl.SimpleThreadPool
             threadCount: 10
             threadPriority: 5
-          jobStore:
-            class: org.quartz.impl.jdbcjobstore.JobStoreTX
-            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
-            tablePrefix: QRTZ_
-            isClustered: false
 
 # MyBatis Plus配置
 mybatis-plus:

@@ -19,6 +19,8 @@ public class DouyinAccountVO {
 
     private Long id;
     private String openId;
+    private String advertiserId;
+    private String douyinId;
     private String nickname;
     private String avatar;
     private Integer fansCount;
@@ -27,7 +29,9 @@ public class DouyinAccountVO {
     private Integer status;
     private BigDecimal dailyLimit;
     private BigDecimal balance;
+    private Integer couponCount;
     private String remark;
+    private String companyName;
     private LocalDateTime tokenExpiresAt;
     private LocalDateTime createTime;
 
@@ -46,6 +50,8 @@ public class DouyinAccountVO {
         return DouyinAccountVO.builder()
                 .id(account.getId())
                 .openId(account.getOpenId())
+                .advertiserId(account.getAdvertiserId())
+                .douyinId(account.getOpenId())  // douyinId使用openId
                 .nickname(account.getNickname())
                 .avatar(account.getAvatar())
                 .fansCount(account.getFansCount())
@@ -54,7 +60,9 @@ public class DouyinAccountVO {
                 .status(account.getStatus())
                 .dailyLimit(account.getDailyLimit())
                 .balance(account.getBalance())
+                .couponCount(0)  // 暂时返回0
                 .remark(account.getRemark())
+                .companyName(null)  // 暂时不支持
                 .tokenExpiresAt(account.getTokenExpiresAt())
                 .createTime(account.getCreateTime())
                 .tokenExpiringSoon(expiringSoon)

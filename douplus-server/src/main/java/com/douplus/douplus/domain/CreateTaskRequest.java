@@ -21,6 +21,11 @@ public class CreateTaskRequest {
     private Long accountId;
 
     /**
+     * 目标抖音账号ID（被投账号）
+     */
+    private Long targetAccountId;
+
+    /**
      * 抖音视频ID
      */
     @NotBlank(message = "请选择被投视频")
@@ -37,6 +42,22 @@ public class CreateTaskRequest {
     private Integer targetType = 1;
 
     /**
+     * 我想要：CONTENT_HEAT-内容加热，FANS-粉丝经营，CUSTOMER-获取客户，PRODUCT-商品营销，APP-应用营销
+     */
+    private String wantType = "CONTENT_HEAT";
+
+    /**
+     * 更想获得：LIKE_COMMENT-点赞评论量，QUALITY_INTERACT-高质量互动，HOME_VIEW-主页浏览量，
+     * LINK_CLICK-评论链接点击，VIDEO_PLAY-视频播放量，LIVE_POPULARITY-直播间人气
+     */
+    private String objective = "LIKE_COMMENT";
+
+    /**
+     * 投放策略：GUARANTEE_PLAY-保证播放量，MAX_LIKE_COMMENT-最大点赞评论量
+     */
+    private String strategy = "GUARANTEE_PLAY";
+
+    /**
      * 投放时长(小时)
      */
     private Integer duration = 24;
@@ -49,7 +70,7 @@ public class CreateTaskRequest {
     private BigDecimal budget;
 
     /**
-     * 投放笔数
+     * 投放笔数（一次创建多笔相同订单）
      */
     private Integer count = 1;
 
@@ -57,6 +78,16 @@ public class CreateTaskRequest {
      * 预定投放时间（为空则立即执行）
      */
     private LocalDateTime scheduledTime;
+
+    /**
+     * 自定义投放时段开始时间
+     */
+    private String customTimeStart;
+
+    /**
+     * 自定义投放时段结束时间
+     */
+    private String customTimeEnd;
 
     /**
      * 定向配置(JSON)

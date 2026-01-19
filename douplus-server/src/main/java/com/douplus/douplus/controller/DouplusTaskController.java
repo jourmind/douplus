@@ -1,13 +1,10 @@
 package com.douplus.douplus.controller;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.douplus.auth.security.SecurityUtils;
+import com.douplus.common.exception.BusinessException;
 import com.douplus.common.result.R;
 import com.douplus.douplus.domain.CreateTaskRequest;
-import com.douplus.douplus.domain.DouplusTask;
-import com.douplus.douplus.domain.DouplusTaskVO;
 import com.douplus.douplus.service.DouplusTaskService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -26,38 +23,58 @@ public class DouplusTaskController {
     private final DouplusTaskService taskService;
 
     /**
-     * 创建投放任务
+     * 创建投放任务（支持单个或批量）
      */
     @PostMapping("/create")
-    public R<List<DouplusTask>> createTask(@Valid @RequestBody CreateTaskRequest request) {
+    public R<List<com.douplus.douplus.domain.DouplusTask>> createTask(@RequestBody List<CreateTaskRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new IllegalArgumentException("投放任务不能为空");
+        }
+        
         Long userId = SecurityUtils.getCurrentUserId();
-        List<DouplusTask> tasks = taskService.createTasks(userId, request);
+        List<com.douplus.douplus.domain.DouplusTask> tasks = taskService.createMultipleTasks(userId, requests);
+        
+        log.info("用户{}创建了{}个投放任务", userId, tasks.size());
         return R.ok(tasks, "投放任务创建成功，共" + tasks.size() + "个任务");
+    }
+
+    /**
+     * 创建单个投放任务（兼容旧版）
+     */
+    @PostMapping("/create-single")
+    public R<com.douplus.douplus.domain.DouplusTask> createSingleTask(@RequestBody CreateTaskRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        List<com.douplus.douplus.domain.DouplusTask> tasks = taskService.createTasks(userId, request);
+        com.douplus.douplus.domain.DouplusTask task = tasks.isEmpty() ? null : tasks.get(0);
+        
+        log.info("用户{}创建了投放任务: {}", userId, task != null ? task.getId() : "null");
+        return R.ok(task, "投放任务创建成功");
     }
 
     /**
      * 分页查询投放记录
      */
     @GetMapping("/page")
-    public R<Page<DouplusTaskVO>> page(
+    public R<?> page(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) String status) {
         Long userId = SecurityUtils.getCurrentUserId();
-        Page<DouplusTaskVO> page = taskService.pageByUserId(userId, pageNum, pageSize, status);
-        return R.ok(page);
+        var result = taskService.pageByUserId(userId, pageNum, pageSize, status);
+        return R.ok(result);
     }
 
     /**
      * 获取任务详情
      */
     @GetMapping("/{id}")
-    public R<DouplusTaskVO> getById(@PathVariable Long id) {
-        DouplusTask task = taskService.getById(id);
-        if (task == null || !task.getUserId().equals(SecurityUtils.getCurrentUserId())) {
+    public R<com.douplus.douplus.domain.DouplusTaskVO> getById(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        com.douplus.douplus.domain.DouplusTask task = taskService.getById(id);
+        if (task == null || !task.getUserId().equals(userId)) {
             return R.fail("任务不存在");
         }
-        return R.ok(DouplusTaskVO.fromEntity(task));
+        return R.ok(com.douplus.douplus.domain.DouplusTaskVO.fromEntity(task));
     }
 
     /**
@@ -68,26 +85,5 @@ public class DouplusTaskController {
         Long userId = SecurityUtils.getCurrentUserId();
         taskService.cancelTask(userId, id);
         return R.ok(null, "任务已取消");
-    }
-
-    /**
-     * 统计投放数据
-     */
-    @GetMapping("/stats")
-    public R<TaskStats> getStats() {
-        Long userId = SecurityUtils.getCurrentUserId();
-        // TODO: 实现统计逻辑
-        TaskStats stats = new TaskStats();
-        return R.ok(stats);
-    }
-
-    @lombok.Data
-    static class TaskStats {
-        private Integer totalTasks = 0;
-        private Integer successTasks = 0;
-        private Integer failTasks = 0;
-        private Integer runningTasks = 0;
-        private java.math.BigDecimal totalBudget = java.math.BigDecimal.ZERO;
-        private java.math.BigDecimal totalCost = java.math.BigDecimal.ZERO;
     }
 }

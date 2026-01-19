@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
 
 -- 默认管理员账号（密码：admin123）
 INSERT INTO sys_user (username, password, nickname, status) VALUES 
-('admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iMGDXgnrbKjmIGvqbp/hM/FgFgGe', '管理员', 1);
+('admin', '$2a$12$UkVxBJN8Leel9OmC/oDosOWLoGbihwwkltOT7ATmx0km3zHxhhURK', '管理员', 1);
 
 -- ========================================
 -- 2. 抖音账号表

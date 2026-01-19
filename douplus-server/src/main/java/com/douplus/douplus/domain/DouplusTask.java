@@ -27,6 +27,11 @@ public class DouplusTask extends BaseEntity {
     private Long accountId;
 
     /**
+     * 目标抖音账号ID（被投账号）
+     */
+    private Long targetAccountId;
+
+    /**
      * 视频ID（关联douyin_video）
      */
     private Long videoId;
@@ -45,6 +50,21 @@ public class DouplusTask extends BaseEntity {
      * 投放目标：1-系统智能推荐，2-自定义定向
      */
     private Integer targetType;
+
+    /**
+     * 我想要：CONTENT_HEAT-内容加热，FANS-粉丝经营，CUSTOMER-获取客户，PRODUCT-商品营销，APP-应用营销
+     */
+    private String wantType;
+
+    /**
+     * 更想获得：LIKE_COMMENT-点赞评论量，QUALITY_INTERACT-高质量互动，HOME_VIEW-主页浏览量等
+     */
+    private String objective;
+
+    /**
+     * 投放策略：GUARANTEE_PLAY-保证播放量，MAX_LIKE_COMMENT-最大点赞评论量
+     */
+    private String strategy;
 
     /**
      * 投放时长(小时)

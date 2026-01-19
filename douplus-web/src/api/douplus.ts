@@ -1,40 +1,41 @@
-import request from '@/utils/request'
-import type { ApiResponse, PageResult, DouplusTask, CreateTaskRequest } from './types'
+import { get, post } from '@/utils/request'
+import type { DouplusTask, CreateTaskRequest } from './types'
 
-// 创建投放任务
-export function createTask(data: CreateTaskRequest): Promise<ApiResponse<DouplusTask[]>> {
-  return request.post('/douplus/task/create', data)
+/**
+ * 创建投放任务（支持单个或批量）
+ */
+export const createTask = (requests: CreateTaskRequest[]) => {
+  return post<DouplusTask[]>('/douplus/task/create', requests)
 }
 
-// 分页查询投放记录
-export function getTaskPage(
-  pageNum: number, 
-  pageSize: number, 
+/**
+ * 创建单个投放任务
+ */
+export const createSingleTask = (request: CreateTaskRequest) => {
+  return post<DouplusTask>('/douplus/task/create-single', request)
+}
+
+/**
+ * 分页查询投放记录
+ */
+export const getTaskPage = (params: {
+  pageNum?: number
+  pageSize?: number
   status?: string
-): Promise<ApiResponse<PageResult<DouplusTask>>> {
-  return request.get('/douplus/task/page', { 
-    params: { pageNum, pageSize, status } 
-  })
+}) => {
+  return get('/douplus/task/page', params)
 }
 
-// 获取任务详情
-export function getTaskById(id: number): Promise<ApiResponse<DouplusTask>> {
-  return request.get(`/douplus/task/${id}`)
+/**
+ * 取消投放任务
+ */
+export const cancelTask = (id: number) => {
+  return post(`/douplus/task/${id}/cancel`)
 }
 
-// 取消任务
-export function cancelTask(id: number): Promise<ApiResponse<void>> {
-  return request.post(`/douplus/task/${id}/cancel`)
-}
-
-// 获取统计数据
-export function getTaskStats(): Promise<ApiResponse<{
-  totalTasks: number
-  successTasks: number
-  failTasks: number
-  runningTasks: number
-  totalBudget: number
-  totalCost: number
-}>> {
-  return request.get('/douplus/task/stats')
+/**
+ * 获取任务详情
+ */
+export const getTaskDetail = (id: number) => {
+  return get(`/douplus/task/${id}`)
 }

@@ -40,6 +40,8 @@ export interface LoginResponse {
 export interface DouyinAccount {
   id: number
   openId: string
+  advertiserId: string
+  douyinId: string
   nickname: string
   avatar: string
   fansCount: number
@@ -48,10 +50,27 @@ export interface DouyinAccount {
   status: number
   dailyLimit: number
   balance: number
+  couponCount: number
   remark: string
+  companyName: string
   tokenExpiresAt: string
   createTime: string
   tokenExpiringSoon: boolean
+}
+
+// 视频信息
+export interface VideoInfo {
+  id: string
+  itemId: string
+  title: string
+  coverUrl: string
+  videoUrl: string
+  duration: number
+  playCount: number
+  likeCount: number
+  commentCount: number
+  shareCount: number
+  publishTime: string
 }
 
 // 投放任务
@@ -65,6 +84,9 @@ export interface DouplusTask {
   videoCoverUrl: string
   taskType: number
   targetType: number
+  wantType: string
+  objective: string
+  strategy: string
   duration: number
   budget: number
   actualCost: number
@@ -84,15 +106,33 @@ export interface DouplusTask {
 // 创建投放任务请求
 export interface CreateTaskRequest {
   accountId: number
+  targetAccountId?: number
   itemId: string
   taskType?: number
   targetType?: number
+  wantType?: string
+  objective?: string
+  strategy?: string
   duration?: number
   budget: number
   count?: number
   scheduledTime?: string
-  targetConfig?: string
+  customTimeStart?: string
+  customTimeEnd?: string
+  targetConfig?: string | TargetConfig
   investPassword: string
+}
+
+// 定向配置
+export interface TargetConfig {
+  gender: string
+  age: string[]
+  crowd: string[]
+  regionType: string
+  regions: string[]
+  interest: string[]
+  similarFans: string
+  industry: string[]
 }
 
 // 评论
