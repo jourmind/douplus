@@ -32,6 +32,11 @@ public class DouyinAccount extends BaseEntity {
     private String advertiserId;
 
     /**
+     * 抖音号唯一标识（用于v3.0 API调用）
+     */
+    private String awemeSecUid;
+
+    /**
      * 抖音UnionID
      */
     private String unionId;

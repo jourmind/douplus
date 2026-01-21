@@ -10,7 +10,7 @@
           v-for="item in navItems" 
           :key="item.key" 
           :class="['nav-item', { active: activeNav === item.key }]"
-          @click="activeNav = item.key"
+          @click="handleNavClick(item.key)"
         >
           {{ item.label }}
         </span>
@@ -22,11 +22,11 @@
       <div class="account-info-section">
         <div class="account-avatar-info">
           <el-avatar :size="60" :src="account?.avatar">
-            <span class="avatar-text">{{ getAvatarText(account?.nickname) }}</span>
+            <span class="avatar-text">{{ getAvatarText(account?.remark || account?.nickname) }}</span>
           </el-avatar>
           <div class="account-basic">
             <div class="name-row">
-              <span class="nickname">{{ account?.nickname || '未知账号' }}</span>
+              <span class="nickname">{{ account?.remark || account?.nickname || '未知账号' }}</span>
               <el-tag type="danger" size="small">企业升级</el-tag>
             </div>
             <div class="stats-row">
@@ -70,136 +70,98 @@
           </div>
         </div>
       </div>
-      
-      <!-- 右侧广告banner -->
-      <div class="banner-section">
-        <div class="promo-banner">
-          <div class="banner-text">
-            <div class="banner-title">巨量营销 · 中小企业投放进阶</div>
-            <div class="banner-subtitle">千万流量 助力生意新增长</div>
-            <div class="banner-highlight">最高得 500元 红包</div>
+    </div>
+
+    <!-- 首页概览内容 -->
+    <div v-if="activeNav === 'overview'" class="overview-content">
+      <!-- 数据总览 -->
+      <div class="data-overview card">
+        <div class="card-header">
+          <h3 class="card-title">数据总览</h3>
+          <div class="card-actions">
+            <span class="period-label">当前周期</span>
+            <el-select v-model="dataPeriod" size="small" style="width: 100px;">
+              <el-option label="近7天" value="7d" />
+              <el-option label="近30天" value="30d" />
+              <el-option label="本月" value="month" />
+            </el-select>
           </div>
-          <el-button type="danger" size="small">立即参加</el-button>
+        </div>
+        
+        <div class="stats-cards">
+          <div class="stat-card highlight">
+            <span class="stat-name">消耗</span>
+            <span class="stat-number">{{ statsData.cost }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-name">视频播放量</span>
+            <span class="stat-number">{{ statsData.playCount }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-name">视频点赞量</span>
+            <span class="stat-number">{{ statsData.likeCount }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-name">视频评论量</span>
+            <span class="stat-number">{{ statsData.commentCount }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-name">视频分享量</span>
+            <span class="stat-number">{{ statsData.shareCount }}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-name">粉丝量</span>
+            <span class="stat-number">{{ statsData.fansCount }}</span>
+          </div>
+        </div>
+        
+        <!-- 消耗图表 -->
+        <div class="chart-section">
+          <div class="chart-title">消耗(元)</div>
+          <div ref="chartRef" class="chart-container"></div>
         </div>
       </div>
     </div>
 
-    <!-- 数据总览 -->
-    <div class="data-overview card">
-      <div class="card-header">
-        <h3 class="card-title">数据总览</h3>
-        <div class="card-actions">
-          <span class="period-label">当前周期</span>
-          <el-select v-model="dataPeriod" size="small" style="width: 100px;">
-            <el-option label="近7天" value="7d" />
-            <el-option label="近30天" value="30d" />
-            <el-option label="本月" value="month" />
-          </el-select>
+    <!-- 我的订单内容 -->
+    <div v-if="activeNav === 'orders'" class="orders-content">
+      <!-- 顶部标题栏 -->
+      <div class="orders-header">
+        <div class="orders-title">
+          <span class="title-text">我的订单</span>
+          <span class="title-line"></span>
         </div>
+        <el-button type="danger" @click="goToDouplus">
+          去上热门
+          <el-icon class="arrow-icon"><TopRight /></el-icon>
+        </el-button>
       </div>
-      
-      <div class="stats-cards">
-        <div class="stat-card highlight">
-          <span class="stat-name">消耗</span>
-          <span class="stat-number">{{ statsData.cost }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-name">视频播放量</span>
-          <span class="stat-number">{{ statsData.playCount }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-name">视频点赞量</span>
-          <span class="stat-number">{{ statsData.likeCount }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-name">视频评论量</span>
-          <span class="stat-number">{{ statsData.commentCount }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-name">视频分享量</span>
-          <span class="stat-number">{{ statsData.shareCount }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-name">粉丝量</span>
-          <span class="stat-number">{{ statsData.fansCount }}</span>
-        </div>
-      </div>
-      
-      <!-- 消耗图表 -->
-      <div class="chart-section">
-        <div class="chart-title">消耗(元)</div>
-        <div ref="chartRef" class="chart-container"></div>
-      </div>
-    </div>
 
-    <!-- 视频排行榜 -->
-    <div class="video-ranking card">
-      <div class="card-header">
-        <h3 class="card-title">视频排行榜</h3>
-        <div class="card-actions">
-          <span class="period-label">时间周期</span>
-          <el-select v-model="rankingPeriod" size="small" style="width: 100px;">
-            <el-option label="近7天" value="7d" />
-            <el-option label="近30天" value="30d" />
-          </el-select>
+      <div class="orders-card card">
+        <!-- 使用共享筛选组件 -->
+        <OrderFilters 
+          v-model="orderFilters" 
+          @change="handleFilterChange"
+          @export="exportOrders" 
+        />
+
+        <!-- 订单统计和排序 -->
+        <div class="orders-toolbar">
+          <span class="orders-count">共 {{ orderList.length }} 个订单</span>
+          <SortCascader v-model="sortOption" @change="handleSortChange" />
         </div>
+
+        <!-- 使用共享订单表格组件 -->
+        <OrderTable 
+          :tasks="orderList"
+          :loading="ordersLoading"
+          :show-account-column="false"
+          :show-cancel-button="false"
+          @view-details="viewOrderDetails"
+        />
+        
+        <el-empty v-if="orderList.length === 0 && !ordersLoading" description="暂无订单数据" />
       </div>
-      
-      <div class="ranking-filters">
-        <span class="filter-label">视频类型：</span>
-        <el-radio-group v-model="videoType" size="small">
-          <el-radio-button label="hot">热度指数</el-radio-button>
-          <el-radio-button label="lowFans">低粉爆款</el-radio-button>
-          <el-radio-button label="highPlay">高完播率</el-radio-button>
-          <el-radio-button label="highFans">高涨粉率</el-radio-button>
-          <el-radio-button label="highLike">高点赞率</el-radio-button>
-        </el-radio-group>
-        <span class="filter-label" style="margin-left: 20px;">垂类领域：</span>
-        <el-select v-model="videoCategory" size="small" style="width: 120px;">
-          <el-option label="休闲娱乐" value="entertainment" />
-          <el-option label="美食" value="food" />
-          <el-option label="生活" value="life" />
-        </el-select>
-      </div>
-      
-      <el-table :data="videoRankingList" stripe>
-        <el-table-column type="index" label="排名" width="60">
-          <template #default="{ $index }">
-            <span :class="['rank-num', { top: $index < 3 }]">{{ $index + 1 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="视频信息" min-width="300">
-          <template #default="{ row }">
-            <div class="video-info">
-              <el-icon class="video-icon"><VideoPlay /></el-icon>
-              <div class="video-detail">
-                <div class="video-title">{{ row.title }}</div>
-                <div class="video-author">{{ row.author }} | 粉丝量: {{ formatNumber(row.fansCount) }}</div>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="热度指数" width="120">
-          <template #default="{ row }">
-            <span class="hot-value">{{ formatNumber(row.hotIndex) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="新增播放量" width="120">
-          <template #default="{ row }">
-            {{ formatNumber(row.newPlayCount) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="新增点赞量" width="120">
-          <template #default="{ row }">
-            {{ formatNumber(row.newLikeCount) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="新增粉丝量" width="100">
-          <template #default="{ row }">
-            {{ row.newFansCount }}
-          </template>
-        </el-table-column>
-      </el-table>
     </div>
 
     <!-- 返回按钮 -->
@@ -213,11 +175,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getAccountById } from '@/api/account'
-import type { DouyinAccount } from '@/api/types'
+import { getTaskList } from '@/api/douplus'
+import type { DouyinAccount, DouplusTask } from '@/api/types'
 import * as echarts from 'echarts'
+import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
+import { OrderTable, OrderFilters, SortCascader } from '@/components/order'
+import type { OrderFiltersType, SortOption } from '@/components/order'
 
 const route = useRoute()
 const router = useRouter()
@@ -226,17 +193,40 @@ const accountId = Number(route.params.id)
 const account = ref<DouyinAccount | null>(null)
 const activeNav = ref('overview')
 const dataPeriod = ref('7d')
-const rankingPeriod = ref('7d')
-const videoType = ref('hot')
-const videoCategory = ref('entertainment')
 const chartRef = ref<HTMLElement | null>(null)
+
+// 订单相关
+const ordersLoading = ref(false)
+const orderFilters = ref<OrderFiltersType>({})
+const sortOption = ref<SortOption>({
+  field: 'createTime',
+  order: 'desc'
+})
+const orderList = ref<any[]>([])
+
+// 筛选条件变化
+const handleFilterChange = () => {
+  loadOrders()
+}
+
+// 排序变化
+const handleSortChange = () => {
+  loadOrders()
+}
+
+// 导出订单
+const exportOrders = () => {
+  ElMessage.info('导出功能开发中')
+}
+
+// 查看订单详情
+const viewOrderDetails = (order: any) => {
+  ElMessage.info('查看详情功能开发中')
+}
 
 const navItems = [
   { key: 'overview', label: '首页概览' },
   { key: 'orders', label: '我的订单' },
-  { key: 'analysis', label: '数据分析' },
-  { key: 'tools', label: '账户工具' },
-  { key: 'help', label: '帮助中心' },
 ]
 
 const statsData = reactive({
@@ -247,19 +237,6 @@ const statsData = reactive({
   shareCount: 0,
   fansCount: 0,
 })
-
-// 模拟视频排行榜数据
-const videoRankingList = ref([
-  {
-    title: '赶紧在评论区@你的续火花搭子看看...',
-    author: '一口气泡水',
-    fansCount: 56000,
-    hotIndex: 165000,
-    newPlayCount: 3933000,
-    newLikeCount: 65000,
-    newFansCount: 401,
-  },
-])
 
 // 格式化数字
 const formatNumber = (num: number) => {
@@ -351,6 +328,97 @@ const initChart = () => {
   
   // 响应式
   window.addEventListener('resize', () => chart.resize())
+}
+
+// 加载订单列表
+const loadOrders = async () => {
+  ordersLoading.value = true
+  try {
+    const res = await getTaskList({
+      accountId: accountId,
+      pageNum: 1,
+      pageSize: 100
+    })
+    if (res.code === 200) {
+      // 转换订单数据格式，与History.vue统一
+      orderList.value = (res.data.records || []).map((task: DouplusTask) => ({
+        id: task.id,
+        videoCover: task.videoCoverUrl,
+        videoTitle: task.videoTitle || '视频标题',
+        itemId: task.itemId,
+        accountNickname: account.value?.nickname || '',
+        status: task.status,
+        actualCost: task.actualCost || 0,
+        budget: task.budget,
+        actualExposure: task.actualExposure || 0,
+        playCount: task.actualExposure || 0,
+        shareCount: 0,
+        clickCount: 0,
+        componentClickCount: 0,
+        play5sRate: 0,
+        orderEndTime: task.orderEndTime ? formatDateTime(task.orderEndTime) : '-',
+        createTime: formatDate(task.createTime),
+      }))
+    }
+  } catch (error) {
+    console.error('加载订单失败', error)
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+// 获取投放目标文本
+const getTargetText = (objective?: string) => {
+  const map: Record<string, string> = {
+    'VIDEO_PROM_COMMENT_AND_LIKE': '点赞评论',
+    'VIDEO_PROM_COMMENT_INTERACTION': '评论链接点击',
+    'VIDEO_PROM_HOMEPAGE': '主页浏览',
+    'VIDEO_PROM_FANS': '粉丝提升',
+  }
+  return map[objective || ''] || '评论链接点击'
+}
+
+// 格式化日期
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(/\//g, '年').replace(/\//g, '月') + '下单'
+}
+
+// 格式化日期时间（订单结束时间用）
+const formatDateTime = (dateStr?: string) => {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+// 导航点击
+const handleNavClick = (key: string) => {
+  activeNav.value = key
+  if (key === 'orders') {
+    loadOrders()
+  }
+}
+
+// 续费订单
+const handleRenewOrder = (order: any) => {
+  ElMessage.info('续费功能开发中')
+}
+
+// 跳转DOU+投放页面
+const goToDouplus = () => {
+  router.push('/douplus/create')
 }
 
 // 返回
@@ -674,73 +742,58 @@ onMounted(async () => {
   }
 }
 
-.video-ranking {
-  .ranking-filters {
+// 订单列表样式 - 与History.vue统一
+.orders-content {
+  .orders-card {
+    margin: 0 20px;
+  }
+}
+
+.orders-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #fff;
+  margin: 0 20px 16px;
+  border-radius: 8px;
+  
+  .orders-title {
     display: flex;
-    align-items: center;
-    margin-bottom: 16px;
+    flex-direction: column;
     
-    .filter-label {
-      font-size: 13px;
-      color: #666;
-      margin-right: 10px;
+    .title-text {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ff6b35;
     }
     
-    :deep(.el-radio-button__inner) {
-      padding: 6px 12px;
-      font-size: 12px;
-    }
-    
-    :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+    .title-line {
+      width: 24px;
+      height: 3px;
       background: #ff6b35;
-      border-color: #ff6b35;
+      border-radius: 2px;
+      margin-top: 6px;
     }
   }
   
-  .video-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    
-    .video-icon {
-      font-size: 32px;
-      color: #999;
-    }
-    
-    .video-detail {
-      .video-title {
-        font-size: 14px;
-        color: #333;
-        margin-bottom: 4px;
-      }
-      
-      .video-author {
-        font-size: 12px;
-        color: #999;
-      }
+  .el-button {
+    .arrow-icon {
+      margin-left: 4px;
     }
   }
+}
+
+.orders-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  margin-bottom: 12px;
   
-  .rank-num {
-    display: inline-block;
-    width: 24px;
-    height: 24px;
-    line-height: 24px;
-    text-align: center;
-    border-radius: 4px;
-    font-size: 12px;
-    color: #666;
-    background: #f5f5f5;
-    
-    &.top {
-      background: #ff6b35;
-      color: #fff;
-    }
-  }
-  
-  .hot-value {
-    color: #ff6b35;
-    font-weight: 500;
+  .orders-count {
+    font-size: 13px;
+    color: #1890ff;
   }
 }
 

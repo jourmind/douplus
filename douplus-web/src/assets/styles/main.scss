@@ -28,6 +28,30 @@ $sidebar-active: #ff6b35;
     color: $sidebar-text;
     display: flex;
     flex-direction: column;
+    transition: width 0.3s ease;
+    position: relative;
+
+    &.collapsed {
+      width: 64px;
+
+      .logo {
+        justify-content: center;
+        padding: 0;
+      }
+
+      .menu {
+        .el-menu {
+          .el-menu-item, .el-sub-menu__title {
+            justify-content: center;
+            padding: 0 20px !important;
+            
+            span {
+              display: none;
+            }
+          }
+        }
+      }
+    }
 
     .logo {
       height: 60px;
@@ -43,11 +67,16 @@ $sidebar-active: #ff6b35;
     .menu {
       flex: 1;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 10px 0;
 
       .el-menu {
         border-right: none;
         background: transparent;
+
+        &.el-menu--collapse {
+          width: 64px;
+        }
 
         .el-menu-item, .el-sub-menu__title {
           color: $sidebar-text;
@@ -61,6 +90,22 @@ $sidebar-active: #ff6b35;
           background: rgba($primary-color, 0.1);
           color: $primary-color;
         }
+      }
+    }
+
+    .collapse-btn {
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: $sidebar-text;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.2s;
+
+      &:hover {
+        color: $primary-color;
+        background: rgba(255, 255, 255, 0.05);
       }
     }
   }
@@ -79,6 +124,22 @@ $sidebar-active: #ff6b35;
       align-items: center;
       justify-content: space-between;
       padding: 0 20px;
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+
+        .toggle-btn {
+          cursor: pointer;
+          color: #6b7280;
+          transition: color 0.2s;
+
+          &:hover {
+            color: $primary-color;
+          }
+        }
+      }
 
       .tabs {
         display: flex;
@@ -176,6 +237,11 @@ $sidebar-active: #ff6b35;
   .cell {
     padding: 8px 12px;
   }
+}
+
+// 排序组件弹出层z-index - 使用!important确保优先级
+.sort-cascader-popover.el-popper {
+  z-index: 3000 !important;
 }
 
 // 状态标签

@@ -11,8 +11,8 @@
             <div 
               v-for="item in WANT_TYPES" 
               :key="item.value"
-              :class="['option-btn', { active: form.wantType === item.value }]"
-              @click="form.wantType = item.value"
+              :class="['option-btn', { active: form.wantType === item.value, disabled: item.value !== 'CONTENT_HEAT' }]"
+              @click="item.value === 'CONTENT_HEAT' && (form.wantType = item.value)"
             >
               {{ item.label }}
             </div>
@@ -26,8 +26,8 @@
             <div 
               v-for="item in OBJECTIVES" 
               :key="item.value"
-              :class="['objective-item', { active: form.objective === item.value }]"
-              @click="form.objective = item.value"
+              :class="['objective-item', { active: form.objective === item.value, disabled: item.value !== 'LINK_CLICK' }]"
+              @click="item.value === 'LINK_CLICK' && (form.objective = item.value)"
             >
               <div class="icon-wrapper">
                 <el-icon :size="20"><component :is="item.icon" /></el-icon>
@@ -128,18 +128,6 @@
               <span class="tag"><el-icon><Check /></el-icon> 有效评论更多</span>
             </div>
           </div>
-          
-          <!-- 预计提升 -->
-          <div class="exposure-estimate">
-            <span class="label">{{ estimatedExposure.label }}</span>
-            <span class="value" v-if="estimatedExposure.isRange">
-              {{ estimatedExposure.min.toLocaleString() }}-{{ estimatedExposure.max.toLocaleString() }}个
-            </span>
-            <span class="value" v-else>
-              {{ estimatedExposure.value.toLocaleString() }}+个
-            </span>
-            <span v-if="estimatedExposure.showGuarantee" class="guarantee">◉ 播放量保障</span>
-          </div>
 
           <!-- 投放时长 -->
           <el-form-item label="投放时长">
@@ -147,38 +135,41 @@
               <div 
                 v-for="item in DURATION_OPTIONS" 
                 :key="item.value"
-                :class="['option-btn', { active: form.duration === item.value || (item.value === 0 && customDuration) }]"
+                :class="['option-btn', { active: !customDuration && form.duration === item.value || (item.value === 0 && customDuration) }]"
                 @click="selectDuration(item.value)"
               >
                 {{ item.label }}
               </div>
             </div>
-            <el-input-number 
-              v-if="customDuration" 
-              v-model="form.duration" 
-              :min="1" 
-              :max="168" 
-              style="width: 150px; margin-top: 10px;"
-            />
+            <div v-if="customDuration" class="custom-duration-row">
+              <el-input-number 
+                v-model="form.durationDays" 
+                :min="1" 
+                :max="7" 
+                style="width: 120px; margin-top: 10px;"
+                @change="onDurationDaysChange"
+              />
+              <span class="duration-unit">天</span>
+            </div>
           </el-form-item>
 
-          <!-- 自定义投放时段（仅2天=48小时以上可用） -->
+          <!-- 自定义投放时段（仅2天以上可用） -->
           <div class="time-range-section">
             <div class="time-range-row">
               <span>自定义投放时段</span>
-              <el-tag type="info" size="small">Beta</el-tag>
+              <el-tag type="danger" size="small">上新</el-tag>
               <el-switch 
                 v-model="form.customTimeEnabled" 
-                :disabled="form.duration < 48"
+                :disabled="!canEnableCustomTime"
                 style="margin-left: auto;" 
               />
             </div>
-            <div v-if="form.duration < 48" class="time-range-hint">
-              投放时长至少2天才能使用自定义时段
+            <div v-if="!canEnableCustomTime" class="time-range-hint">
+              自定义投放时长至少2天才能使用自定义时段
             </div>
             
             <!-- 自定义时段详细设置 -->
-            <div v-if="form.customTimeEnabled && form.duration >= 48" class="time-slot-config">
+            <div v-if="form.customTimeEnabled && canEnableCustomTime" class="time-slot-config">
               <div class="time-slot-tabs">
                 <span 
                   :class="['tab', { active: form.timeSlotType === 'fixed' }]"
@@ -190,36 +181,105 @@
                 >预约投放</span>
               </div>
               
-              <!-- 开始投放时间 -->
-              <div class="time-slot-row">
-                <el-radio v-model="form.startTimeType" label="now">开始投放时间</el-radio>
-                <el-date-picker
-                  v-model="form.scheduledStartTime"
-                  type="datetime"
-                  placeholder="选择时间"
-                  format="YYYY-MM-DD HH:mm"
-                  value-format="YYYY-MM-DD HH:mm"
-                  :disabled="form.startTimeType !== 'now'"
-                  style="width: 200px;"
-                />
+              <!-- 固定投放时段 -->
+              <div v-if="form.timeSlotType === 'fixed'" class="fixed-time-section">
+                <div class="time-slot-row">
+                  <span class="row-label">投放时段 <el-icon class="help-icon"><QuestionFilled /></el-icon></span>
+                  <el-popover
+                    :visible="showTimePopover"
+                    placement="bottom"
+                    :width="280"
+                    trigger="click"
+                  >
+                    <template #reference>
+                      <div class="time-range-display" @click="showTimePopover = !showTimePopover">
+                        <span>{{ form.fixedTimeStart }}:00 ~ {{ form.fixedTimeEnd }}:00</span>
+                        <el-icon><Clock /></el-icon>
+                      </div>
+                    </template>
+                    <div class="time-picker-popover">
+                      <div class="time-picker-header">
+                        <span>开始时间</span>
+                        <span>结束时间</span>
+                      </div>
+                      <div class="time-picker-body">
+                        <div class="time-picker-column">
+                          <div class="time-scroll">
+                            <div 
+                              v-for="h in 24" 
+                              :key="'start-' + (h - 1)"
+                              :class="['time-option', { active: form.fixedTimeStart === h - 1 }]"
+                              @click="form.fixedTimeStart = h - 1"
+                            >{{ String(h - 1).padStart(2, '0') }}</div>
+                          </div>
+                          <div class="time-scroll minute-scroll">
+                            <div class="time-option active">00</div>
+                          </div>
+                        </div>
+                        <div class="time-picker-column">
+                          <div class="time-scroll">
+                            <div 
+                              v-for="h in 24" 
+                              :key="'end-' + h"
+                              :class="['time-option', { active: form.fixedTimeEnd === h, disabled: h <= form.fixedTimeStart }]"
+                              @click="h > form.fixedTimeStart && (form.fixedTimeEnd = h)"
+                            >{{ String(h).padStart(2, '0') }}</div>
+                          </div>
+                          <div class="time-scroll minute-scroll">
+                            <div class="time-option active">00</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="time-picker-footer">
+                        <el-button size="small" @click="showTimePopover = false">取消</el-button>
+                        <el-button type="primary" size="small" @click="showTimePopover = false">确定</el-button>
+                      </div>
+                    </div>
+                  </el-popover>
+                </div>
+                <div class="fixed-time-hint">
+                  预计{{ fixedTimePreview.startDate }}-{{ fixedTimePreview.endDate }}，每天{{ form.fixedTimeStart }}点-{{ form.fixedTimeEnd }}点投放，累计投放时长{{ fixedTimePreview.totalHours }}小时
+                </div>
               </div>
               
-              <!-- 当视频播放量高于多少时开始投放 -->
-              <div class="time-slot-row">
-                <el-radio v-model="form.startTimeType" label="condition">当视频播放量高于多少时开始投放</el-radio>
-                <el-select 
-                  v-model="form.playCountThreshold" 
-                  placeholder="选择"
-                  :disabled="form.startTimeType !== 'condition'"
-                  style="width: 120px;"
-                >
-                  <el-option :value="100" label="100" />
-                  <el-option :value="200" label="200" />
-                  <el-option :value="500" label="500" />
-                  <el-option :value="1000" label="1000" />
-                  <el-option :value="2000" label="2000" />
-                  <el-option :value="5000" label="5000" />
-                </el-select>
+              <!-- 预约投放 -->
+              <div v-if="form.timeSlotType === 'schedule'" class="schedule-section">
+                <!-- 开始投放时间 -->
+                <div class="schedule-row">
+                  <el-radio v-model="form.startTimeType" label="datetime" class="schedule-radio">
+                    <span class="radio-label">开始投放时间</span>
+                  </el-radio>
+                  <el-date-picker
+                    v-model="form.scheduledStartTime"
+                    type="datetime"
+                    placeholder="选择时间"
+                    format="YYYY-MM-DD HH:mm"
+                    value-format="YYYY-MM-DD HH:mm"
+                    :disabled="form.startTimeType !== 'datetime'"
+                    style="width: 180px;"
+                    :default-value="defaultScheduleTime"
+                  />
+                </div>
+                
+                <!-- 当视频播放量高于多少时开始投放 -->
+                <div class="schedule-row">
+                  <el-radio v-model="form.startTimeType" label="playcount" class="schedule-radio">
+                    <span class="radio-label">当视频播放量高于多少时开始投放</span>
+                  </el-radio>
+                  <el-select 
+                    v-model="form.playCountThreshold" 
+                    placeholder="选择"
+                    :disabled="form.startTimeType !== 'playcount'"
+                    style="width: 100px;"
+                  >
+                    <el-option :value="200" label="200" />
+                    <el-option :value="400" label="400" />
+                    <el-option :value="600" label="600" />
+                    <el-option :value="800" label="800" />
+                    <el-option :value="1000" label="1000" />
+                    <el-option :value="2000" label="2000" />
+                  </el-select>
+                </div>
               </div>
             </div>
           </div>
@@ -490,7 +550,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { 
   VideoCamera, Close, QuestionFilled, ArrowRight, Check,
-  ChatDotRound, Connection, House, Link, VideoPlay, Mic
+  ChatDotRound, Connection, House, Link, VideoPlay, Mic, Clock
 } from '@element-plus/icons-vue'
 import { getAccountList } from '@/api/account'
 import { getVideoList } from '@/api/video'
@@ -527,6 +587,7 @@ const targetingTab = ref('new')
 const accountBalance = ref(0)
 const showSetPasswordDialog = ref(false)
 const settingPassword = ref(false)
+const showTimePopover = ref(false)
 const passwordForm = reactive({
   investPassword: '',
   confirmPassword: ''
@@ -536,12 +597,15 @@ const form = reactive({
   accountId: null as number | null,
   targetAccountId: null as number | null,
   wantType: 'CONTENT_HEAT',
-  objective: 'LIKE_COMMENT',
+  objective: 'LINK_CLICK',
   priorityCustomer: false,
   duration: 6,
+  durationDays: 2,
   customTimeEnabled: false,
-  timeSlotType: 'schedule',  // 'fixed' | 'schedule'
-  startTimeType: 'now',      // 'now' | 'condition'
+  timeSlotType: 'fixed',  // 'fixed' | 'schedule'
+  fixedTimeStart: 12,  // 固定投放开始小时
+  fixedTimeEnd: 24,    // 固定投放结束小时
+  startTimeType: 'datetime',      // 'datetime' | 'playcount'
   scheduledStartTime: '',
   playCountThreshold: 200,
   budget: 100,
@@ -583,6 +647,36 @@ const currentStrategies = computed(() => {
 
 const totalAmount = computed(() => {
   return form.budget * form.count
+})
+
+// 是否可以启用自定义投放时段
+const canEnableCustomTime = computed(() => {
+  return customDuration.value && form.durationDays >= 2
+})
+
+// 预约投放默认时间
+const defaultScheduleTime = computed(() => {
+  const now = new Date()
+  now.setMinutes(Math.ceil(now.getMinutes() / 30) * 30, 0, 0)
+  return now
+})
+
+// 固定时段投放预览信息
+const fixedTimePreview = computed(() => {
+  const now = new Date()
+  const startDate = `${now.getMonth() + 1}月${now.getDate()}日`
+  const endDate = new Date(now.getTime() + (form.durationDays - 1) * 24 * 60 * 60 * 1000)
+  const endDateStr = `${endDate.getMonth() + 1}月${endDate.getDate()}日`
+  
+  // 计算每天投放小时数
+  const hoursPerDay = form.fixedTimeEnd - form.fixedTimeStart
+  const totalHours = hoursPerDay * form.durationDays
+  
+  return {
+    startDate,
+    endDate: endDateStr,
+    totalHours
+  }
 })
 
 // 方法
@@ -629,10 +723,19 @@ const onAccountChange = async (accountId: number) => {
 const selectDuration = (value: number) => {
   if (value === 0) {
     customDuration.value = true
-    form.duration = 24
+    form.durationDays = 2
+    form.duration = 48  // 2天 = 48小时
   } else {
     customDuration.value = false
     form.duration = value
+    form.customTimeEnabled = false  // 切换为预设时长时关闭自定义时段
+  }
+}
+
+const onDurationDaysChange = (days: number) => {
+  form.duration = days * 24  // 天数转换为小时
+  if (days < 2) {
+    form.customTimeEnabled = false  // 不足2天关闭自定义时段
   }
 }
 
@@ -785,14 +888,21 @@ const handleSubmit = async () => {
 const resetForm = () => {
   formRef.value?.resetFields()
   selectedVideos.value = []
-  tempSelectedVideos.value = []
   customDuration.value = false
   customBudget.value = false
   Object.assign(form, {
     wantType: 'CONTENT_HEAT',
-    objective: 'LIKE_COMMENT',
+    objective: 'LINK_CLICK',
     priorityCustomer: false,
     duration: 6,
+    durationDays: 2,
+    customTimeEnabled: false,
+    timeSlotType: 'fixed',
+    fixedTimeStart: 12,
+    fixedTimeEnd: 24,
+    startTimeType: 'datetime',
+    scheduledStartTime: '',
+    playCountThreshold: 200,
     budget: 100,
     count: 1,
     strategy: 'GUARANTEE_PLAY',
@@ -868,6 +978,17 @@ onMounted(() => {
   background: #e6f4ff;
 }
 
+.option-btn.disabled {
+  color: #c0c4cc;
+  background: #f5f7fa;
+  border-color: #e4e7ed;
+  cursor: not-allowed;
+}
+
+.option-btn.disabled:hover {
+  border-color: #e4e7ed;
+}
+
 .objective-group {
   display: flex;
   gap: 10px;
@@ -899,6 +1020,21 @@ onMounted(() => {
 
 .objective-item.active .icon-wrapper {
   color: #ff6b35;
+}
+
+.objective-item.disabled {
+  color: #c0c4cc;
+  background: #f5f7fa;
+  border-color: #e4e7ed;
+  cursor: not-allowed;
+}
+
+.objective-item.disabled:hover {
+  border-color: #e4e7ed;
+}
+
+.objective-item.disabled .icon-wrapper {
+  color: #c0c4cc;
 }
 
 .icon-wrapper {
@@ -1326,5 +1462,171 @@ onMounted(() => {
   color: #ff6b35;
   font-size: 12px;
   margin-left: 8px;
+}
+
+/* 自定义时长输入 */
+.custom-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.duration-unit {
+  color: #666;
+  font-size: 13px;
+}
+
+/* 固定投放时段 */
+.fixed-time-section {
+  padding: 8px 0;
+}
+
+.fixed-time-section .row-label {
+  color: #6b7280;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fixed-time-section .help-icon {
+  color: #9ca3af;
+  cursor: pointer;
+}
+
+.fixed-time-hint {
+  color: #ff6b35;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+/* 预约投放 */
+.schedule-section {
+  padding: 8px 0;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.schedule-radio {
+  flex-shrink: 0;
+}
+
+.radio-label {
+  color: #333;
+}
+
+/* 时间选择器样式 */
+.time-range-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 160px;
+  background: #fff;
+  transition: border-color 0.2s;
+}
+
+.time-range-display:hover {
+  border-color: #1890ff;
+}
+
+.time-range-display span {
+  color: #333;
+  font-size: 13px;
+}
+
+.time-range-display .el-icon {
+  color: #9ca3af;
+}
+
+.time-picker-popover {
+  padding: 0;
+}
+
+.time-picker-header {
+  display: flex;
+  justify-content: space-around;
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.time-picker-body {
+  display: flex;
+}
+
+.time-picker-column {
+  flex: 1;
+  display: flex;
+  border-right: 1px solid #f0f0f0;
+}
+
+.time-picker-column:last-child {
+  border-right: none;
+}
+
+.time-scroll {
+  flex: 1;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.time-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.time-scroll::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}
+
+.minute-scroll {
+  background: #f9fafb;
+}
+
+.time-option {
+  padding: 6px 12px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.time-option:hover {
+  background: #f0f0f0;
+}
+
+.time-option.active {
+  color: #ff2c55;
+  font-weight: 600;
+}
+
+.time-option.disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.time-option.disabled:hover {
+  background: transparent;
+}
+
+.time-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #f0f0f0;
 }
 </style>

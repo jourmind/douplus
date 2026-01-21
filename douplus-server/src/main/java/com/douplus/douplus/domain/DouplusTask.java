@@ -92,6 +92,61 @@ public class DouplusTask extends BaseEntity {
     private Integer actualExposure;
 
     /**
+     * 播放量
+     */
+    private Integer playCount;
+
+    /**
+     * 点赞数
+     */
+    private Integer likeCount;
+
+    /**
+     * 评论数
+     */
+    private Integer commentCount;
+
+    /**
+     * 分享数
+     */
+    private Integer shareCount;
+
+    /**
+     * 新增粉丝
+     */
+    private Integer followCount;
+
+    /**
+     * 点击量
+     */
+    private Integer clickCount;
+
+    /**
+     * 来源：local-本地创建，synced-同步
+     */
+    private String source;
+
+    /**
+     * 抖音昵称
+     */
+    private String awemeNick;
+
+    /**
+     * 抹音头像
+     */
+    private String awemeAvatar;
+    
+    /**
+     * 视频标题
+     */
+    private String videoTitle;
+    
+    /**
+     * 视频封面URL
+     */
+    private String videoCoverUrl;
+
+    /**
      * 状态：WAIT-待执行，RUNNING-执行中，SUCCESS-成功，FAIL-失败，CANCELLED-已取消
      */
     private String status;

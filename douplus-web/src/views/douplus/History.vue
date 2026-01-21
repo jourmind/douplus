@@ -1,122 +1,46 @@
 <template>
   <div class="douplus-history">
     <div class="page-header">
-      <h2>投放记录</h2>
-      <p class="subtitle">查看历史投放任务及效果数据</p>
+      <div class="header-left">
+        <h2>我的订单</h2>
+      </div>
+      <div class="header-right">
+        <el-button type="success" :loading="syncing" @click="handleSyncOrders">
+          <el-icon><Refresh /></el-icon> 同步历史订单
+        </el-button>
+        <el-button type="primary" class="hot-btn">
+          去上热门 <el-icon><TopRight /></el-icon>
+        </el-button>
+      </div>
     </div>
     
-    <el-card class="filter-card">
-      <el-form :model="filters" inline size="default">
-        <el-form-item label="任务状态">
-          <el-select v-model="filters.status" placeholder="全部状态" clearable>
-            <el-option label="待执行" value="WAIT" />
-            <el-option label="执行中" value="RUNNING" />
-            <el-option label="成功" value="SUCCESS" />
-            <el-option label="失败" value="FAIL" />
-            <el-option label="已取消" value="CANCELLED" />
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item label="投放时间">
-          <el-date-picker
-            v-model="filters.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
-          />
-        </el-form-item>
-        
-        <el-form-item>
-          <el-button type="primary" @click="loadTasks">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
-        </el-form-item>
-      </el-form>
+    <el-card class="filter-card" shadow="never">
+      <OrderFilters 
+        v-model="filters" 
+        :members="members"
+        :show-member-filter="true"
+        @change="handleFilterChange"
+        @export="exportData" 
+      />
     </el-card>
     
-    <el-card class="table-card">
-      <el-table 
-        :data="tasks" 
-        v-loading="loading"
-        style="width: 100%"
-      >
-        <el-table-column prop="id" label="任务ID" width="100" />
-        
-        <el-table-column label="投放账号" width="200">
-          <template #default="{ row }">
-            <div class="account-cell">
-              <el-avatar :size="30" :src="row.accountAvatar" />
-              <span>{{ row.accountNickname }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        
-        <el-table-column prop="itemId" label="视频ID" width="150" show-overflow-tooltip />
-        
-        <el-table-column label="投放金额" width="100">
-          <template #default="{ row }">
-            <span class="amount">¥{{ row.budget }}</span>
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="预计效果" width="120">
-          <template #default="{ row }">
-            <div class="effect-info">
-              <div>曝光: {{ row.expectedExposure }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="实际效果" width="120">
-          <template #default="{ row }">
-            <div class="effect-info">
-              <div>曝光: {{ row.actualExposure || 0 }}</div>
-            </div>
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusText(row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="创建时间" width="160">
-          <template #default="{ row }">
-            {{ formatDate(row.createTime) }}
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="计划执行时间" width="160">
-          <template #default="{ row }">
-            {{ formatDate(row.scheduledTime) }}
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="操作" width="150">
-          <template #default="{ row }">
-            <el-button 
-              size="small" 
-              @click="viewDetails(row)"
-              v-if="row.status !== 'WAIT'"
-            >
-              查看详情
-            </el-button>
-            <el-button 
-              size="small" 
-              type="danger" 
-              @click="cancelTask(row)"
-              v-if="row.status === 'WAIT'"
-            >
-              取消任务
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <el-card class="table-card" shadow="never">
+      <div class="table-header">
+        <span class="order-count">共 {{ pagination.total }} 个订单</span>
+        <SortCascader v-model="sortOption" @change="handleSortChange" />
+      </div>
+      
+      <!-- 使用共享订单表格组件 -->
+      <OrderTable 
+        :tasks="tasks"
+        :loading="loading"
+        :show-account-column="true"
+        :show-cancel-button="true"
+        :show-renew-button="true"
+        @view-details="viewDetails"
+        @cancel="cancelTask"
+        @renew="handleRenew"
+      />
       
       <el-pagination
         v-model:current-page="pagination.currentPage"
@@ -170,19 +94,70 @@
         </el-descriptions>
       </div>
     </el-dialog>
+    
+    <!-- 续费弹窗 -->
+    <RenewDialog 
+      v-model="renewVisible" 
+      :task="renewTask" 
+      ref="renewDialogRef"
+      @confirm="confirmRenew" 
+    />
+    
+    <!-- 同步进度弹窗 -->
+    <el-dialog 
+      v-model="syncDialogVisible" 
+      title="同步历史订单" 
+      width="450px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="syncStatus !== 'syncing'"
+    >
+      <div class="sync-dialog-content">
+        <div class="sync-status-icon">
+          <el-icon v-if="syncStatus === 'syncing' || syncStatus === 'idle'" class="is-loading" :size="48" color="#409eff">
+            <Loading />
+          </el-icon>
+          <el-icon v-else-if="syncStatus === 'completed'" :size="48" color="#67c23a">
+            <CircleCheck />
+          </el-icon>
+          <el-icon v-else :size="48" color="#f56c6c">
+            <CircleClose />
+          </el-icon>
+        </div>
+        
+        <div class="sync-message">{{ syncMessage }}</div>
+        
+        <div v-if="syncStatus === 'syncing' || syncStatus === 'idle'" class="sync-progress">
+          <el-progress 
+            :percentage="syncProgress" 
+            :stroke-width="10"
+            :show-text="false"
+            status="success"
+          />
+          <div class="sync-count">已同步 <span class="count-num">{{ syncCount }}</span> 条订单</div>
+        </div>
+        
+        <div v-else-if="syncStatus === 'completed'" class="sync-result">
+          <div class="result-count">共同步 <span class="count-num">{{ syncCount }}</span> 条订单</div>
+        </div>
+      </div>
+      
+      <template #footer v-if="syncStatus !== 'syncing' && syncStatus !== 'idle'">
+        <el-button type="primary" @click="closeSyncDialog">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import type { DouplusTaskVO } from '@/api/types'
-import { getTaskPage, cancelTask as cancelTaskApi, getTaskDetail } from '@/api/douplus'
-
-interface Filters {
-  status?: string
-  dateRange?: [string, string]
-}
+import { getTaskPage, cancelTask as cancelTaskApi, getTaskDetail, createTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
+import { getAccountList } from '@/api/account'
+import { OrderTable, OrderFilters, SortCascader, RenewDialog } from '@/components/order'
+import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
 
 interface Pagination {
   currentPage: number
@@ -191,13 +166,32 @@ interface Pagination {
 }
 
 const loading = ref(false)
-const tasks = ref<DouplusTaskVO[]>([])
+const tasks = ref<any[]>([])
 const detailVisible = ref(false)
 const currentTask = ref<DouplusTaskVO | null>(null)
+const members = ref<MemberOption[]>([])
+const renewVisible = ref(false)
+const renewTask = ref<any>(null)
+const renewDialogRef = ref<any>(null)
+const syncing = ref(false)
+const syncMessage = ref('')
+const syncDialogVisible = ref(false)
+const syncStatus = ref<'idle' | 'syncing' | 'completed' | 'error'>('idle')
+const syncCount = ref(0)
+const syncProgress = ref(0)
+let syncTimer: ReturnType<typeof setInterval> | null = null
 
-const filters = reactive<Filters>({
+const filters = ref<OrderFiltersType>({
   status: '',
+  objective: '',
+  keyword: '',
+  memberId: undefined,
   dateRange: undefined
+})
+
+const sortOption = ref<SortOption>({
+  field: 'createTime',
+  order: 'desc'
 })
 
 const pagination = reactive<Pagination>({
@@ -206,6 +200,38 @@ const pagination = reactive<Pagination>({
   total: 0
 })
 
+// 加载成员列表（已授权账号）
+const loadMembers = async () => {
+  try {
+    const res = await getAccountList()
+    if (res.code === 200) {
+      members.value = (res.data || []).map((account: any) => ({
+        id: account.id,
+        nickname: account.remark || account.nickname || `账号${account.id}`
+      }))
+    }
+  } catch (error) {
+    console.error('加载成员列表失败', error)
+  }
+}
+
+// 筛选条件变化
+const handleFilterChange = () => {
+  pagination.currentPage = 1
+  loadTasks()
+}
+
+// 排序变化
+const handleSortChange = () => {
+  pagination.currentPage = 1
+  loadTasks()
+}
+
+// 导出数据
+const exportData = () => {
+  ElMessage.info('导出功能开发中')
+}
+
 // 加载任务列表
 const loadTasks = async () => {
   loading.value = true
@@ -213,11 +239,23 @@ const loadTasks = async () => {
     const res = await getTaskPage({
       pageNum: pagination.currentPage,
       pageSize: pagination.pageSize,
-      status: filters.status
+      status: filters.value.status
     })
     
     if (res.code === 200) {
-      tasks.value = res.data?.records || []
+      // 转换数据格式以匹配共享组件，保留所有原始数据用于指标计算
+      tasks.value = (res.data?.records || []).map((task: DouplusTaskVO) => ({
+        ...task,
+        videoCover: task.videoCoverUrl,
+        // 使用API返回的实际数据
+        playCount: task.playCount || task.actualExposure || 0,
+        shareCount: task.shareCount || 0,
+        clickCount: task.clickCount || 0,
+        likeCount: task.likeCount || 0,
+        followCount: task.followCount || 0,
+        componentClickCount: task.clickCount || 0,  // 组件点击量使用clickCount
+        play5sRate: 0,  // API未返回此数据
+      }))
       pagination.total = res.data?.total || 0
     }
   } catch (error) {
@@ -225,14 +263,6 @@ const loadTasks = async () => {
   } finally {
     loading.value = false
   }
-}
-
-// 重置筛选条件
-const resetFilters = () => {
-  filters.status = ''
-  filters.dateRange = undefined
-  pagination.currentPage = 1
-  loadTasks()
 }
 
 // 分页大小变化
@@ -280,7 +310,7 @@ const formatDate = (dateString: string) => {
 }
 
 // 查看任务详情
-const viewDetails = async (task: DouplusTaskVO) => {
+const viewDetails = async (task: any) => {
   try {
     const res = await getTaskDetail(task.id)
     if (res.code === 200) {
@@ -293,7 +323,7 @@ const viewDetails = async (task: DouplusTaskVO) => {
 }
 
 // 取消任务
-const cancelTask = async (task: DouplusTaskVO) => {
+const cancelTask = async (task: any) => {
   try {
     await ElMessageBox.confirm(
       `确认取消任务 ${task.id}？`,
@@ -309,60 +339,262 @@ const cancelTask = async (task: DouplusTaskVO) => {
   }
 }
 
+// 续费 - 打开弹窗
+const handleRenew = (task: any) => {
+  renewTask.value = task
+  renewVisible.value = true
+}
+
+// 续费 - 确认提交
+const confirmRenew = async (data: { task: any, count: number, investPassword: string }) => {
+  try {
+    renewDialogRef.value?.setLoading(true)
+    
+    // 构建续费请求（复制原订单配置）
+    const request = {
+      accountId: data.task.accountId,
+      itemId: data.task.itemId,
+      budget: data.task.budget,
+      duration: data.task.duration || 24,
+      objective: data.task.objective || 'LIKE_COMMENT',
+      strategy: data.task.strategy || 'GUARANTEE_PLAY',
+      wantType: data.task.wantType || 'CONTENT_HEAT',
+      targetConfig: data.task.targetConfig,
+      count: data.count,
+      investPassword: data.investPassword
+    }
+    
+    const res = await createTask([request])
+    
+    if (res.code === 200) {
+      ElMessage.success(`续费成功，已创建 ${data.count} 个新任务`)
+      renewVisible.value = false
+      loadTasks() // 刷新列表
+    } else {
+      ElMessage.error(res.message || '续费失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '续费失败')
+  } finally {
+    renewDialogRef.value?.setLoading(false)
+  }
+}
+
+// 同步历史订单
+const handleSyncOrders = async () => {
+  if (syncing.value) {
+    ElMessage.warning('正在同步中，请稍候...')
+    return
+  }
+  
+  try {
+    syncing.value = true
+    syncStatus.value = 'syncing'
+    syncMessage.value = '正在初始化同步...'
+    syncCount.value = 0
+    syncProgress.value = 0
+    syncDialogVisible.value = true
+    
+    const res = await syncAllOrders()
+    if (res.code === 200) {
+      // 不管返回什么状态，都开始轮询
+      syncMessage.value = '同步已开始...'
+      startPolling()
+    } else {
+      syncStatus.value = 'error'
+      syncMessage.value = res.message || '同步失败'
+      syncing.value = false
+    }
+  } catch (error: any) {
+    syncStatus.value = 'error'
+    syncMessage.value = error.message || '同步失败'
+    syncing.value = false
+  }
+}
+
+// 开始轮询同步状态
+const startPolling = () => {
+  if (syncTimer) {
+    clearInterval(syncTimer)
+  }
+  
+  // 轮询函数
+  const pollStatus = async () => {
+    try {
+      const res = await getSyncStatus()
+      if (res.code === 200) {
+        const status = res.data
+        syncMessage.value = status?.message || '正在同步...'
+        syncCount.value = status?.count || 0
+        
+        if (status?.status === 'completed') {
+          stopPolling()
+          syncStatus.value = 'completed'
+          syncMessage.value = '同步完成!'
+          syncProgress.value = 100
+          loadTasks()
+        } else if (status?.status === 'error') {
+          stopPolling()
+          syncStatus.value = 'error'
+          syncMessage.value = status.message || '同步失败'
+        } else {
+          // 模拟进度（因为不知道总数，每次加一点）
+          if (syncProgress.value < 95) {
+            syncProgress.value = Math.min(95, syncProgress.value + 10)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('查询同步状态失败', error)
+    }
+  }
+  
+  // 立即执行第一次查询
+  pollStatus()
+  
+  // 然后每秒轮询一次
+  syncTimer = setInterval(pollStatus, 1000)
+}
+
+// 停止轮询
+const stopPolling = () => {
+  if (syncTimer) {
+    clearInterval(syncTimer)
+    syncTimer = null
+  }
+  syncing.value = false
+}
+
+// 关闭同步弹窗
+const closeSyncDialog = () => {
+  syncDialogVisible.value = false
+  syncStatus.value = 'idle'
+  syncMessage.value = ''
+  syncCount.value = 0
+  syncProgress.value = 0
+}
+
 onMounted(() => {
+  loadMembers()
   loadTasks()
 })
 </script>
 
 <style scoped>
 .douplus-history {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 20px;
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #ff6b35;
 }
 
 .page-header h2 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 8px;
+  color: #ff6b35;
+  margin: 0;
 }
 
-.page-header .subtitle {
-  color: #6b7280;
-  font-size: 14px;
+.hot-btn {
+  background: linear-gradient(135deg, #ff6b35 0%, #ff8c5a 100%);
+  border: none;
+  border-radius: 4px;
 }
 
 .filter-card {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.filter-card :deep(.el-card__body) {
+  padding: 16px;
 }
 
 .table-card {
-  margin-bottom: 20px;
+  border: 1px solid #e5e7eb;
 }
 
-.account-cell {
+.table-card :deep(.el-card__body) {
+  padding: 0;
+}
+
+.table-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.amount {
-  color: #e74c3c;
-  font-weight: 600;
+.order-count {
+  color: #1890ff;
+  font-size: 14px;
 }
 
-.effect-info {
-  font-size: 12px;
-  color: #6b7280;
+/* 分页 */
+:deep(.el-pagination) {
+  padding: 16px;
+  justify-content: flex-end;
 }
 
+/* 详情弹窗 */
 .task-detail {
   max-height: 60vh;
   overflow-y: auto;
+}
+
+/* 同步进度弹窗 */
+.sync-dialog-content {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.sync-status-icon {
+  margin-bottom: 20px;
+}
+
+.sync-status-icon .is-loading {
+  animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-message {
+  font-size: 16px;
+  color: #303133;
+  margin-bottom: 20px;
+}
+
+.sync-progress {
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.sync-count, .result-count {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.count-num {
+  font-size: 24px;
+  font-weight: bold;
+  color: #409eff;
+  margin: 0 4px;
+}
+
+.sync-result .count-num {
+  color: #67c23a;
 }
 </style>

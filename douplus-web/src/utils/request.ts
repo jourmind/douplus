@@ -60,14 +60,27 @@ request.interceptors.response.use(
   }
 )
 
+// API响应类型
+export interface ApiResponse<T = any> {
+  code: number
+  message: string
+  data: T
+  timestamp: number
+}
+
 // 封装 GET 请求
-export function get<T>(url: string, params?: Record<string, any>): Promise<T> {
-  return request.get(url, { params }).then(res => res.data)
+export function get<T>(url: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+  return request.get(url, { params })
 }
 
 // 封装 POST 请求
-export function post<T>(url: string, data?: any): Promise<T> {
-  return request.post(url, data).then(res => res.data)
+export function post<T>(url: string, data?: any, config?: { timeout?: number }): Promise<ApiResponse<T>> {
+  return request.post(url, data, config)
+}
+
+// 封装带长超时的 POST 请求（用于同步等耗时操作）
+export function postLong<T>(url: string, data?: any): Promise<ApiResponse<T>> {
+  return request.post(url, data, { timeout: 300000 }) // 5分钟超时
 }
 
 export default request

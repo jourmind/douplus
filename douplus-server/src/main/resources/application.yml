@@ -81,7 +81,7 @@ jwt:
 # 抖音开放平台API配置
 douyin:
   api:
-    base-url: https://ad.oceanengine.com/open_api/2
+    base-url: https://open.douyin.com
     app-id: ${DOUYIN_APP_ID:}
     app-secret: ${DOUYIN_APP_SECRET:}
     oauth-callback: ${DOUYIN_OAUTH_CALLBACK:}

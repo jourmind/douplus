@@ -8,6 +8,7 @@ import com.douplus.account.service.DouyinAccountService;
 import com.douplus.auth.service.SysUserService;
 import com.douplus.common.exception.BusinessException;
 import com.douplus.common.result.ResultCode;
+import com.douplus.douplus.client.DouyinAdClient;
 import com.douplus.douplus.domain.CreateTaskRequest;
 import com.douplus.douplus.domain.DouplusTask;
 import com.douplus.douplus.domain.DouplusTaskVO;
@@ -21,8 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -35,12 +38,353 @@ public class DouplusTaskService extends ServiceImpl<DouplusTaskMapper, DouplusTa
 
     private final DouyinAccountService accountService;
     private final SysUserService userService;
+    private final DouyinAdClient douyinAdClient;
 
     @Value("${security.daily-limit:10000}")
     private BigDecimal systemDailyLimit;
 
     @Value("${security.max-single-amount:5000}")
     private BigDecimal maxSingleAmount;
+
+    /**
+     * 同步DOU+历史订单
+     * 注意：不使用全局事务，每页独立提交，避免部分页面失败导致全部回滚
+     */
+    public int syncDouplusOrders(Long userId, Long accountId) {
+        // 1. 验证账号归属
+        DouyinAccount account = accountService.getByIdAndUserId(accountId, userId);
+        if (account == null) {
+            throw new BusinessException(ResultCode.ACCOUNT_NOT_FOUND);
+        }
+        if (account.getStatus() != 1) {
+            throw new BusinessException(ResultCode.ACCOUNT_TOKEN_EXPIRED);
+        }
+
+        // 2. 解密Token
+        String accessToken;
+        try {
+            accessToken = new String(java.util.Base64.getDecoder().decode(account.getAccessToken()));
+        } catch (Exception e) {
+            log.error("解密Token失败", e);
+            throw new BusinessException(ResultCode.ACCOUNT_TOKEN_EXPIRED, "Token解密失败");
+        }
+
+        // 3. 获取aweme_sec_uid（v3.0 API必需）
+        String awemeSecUid = account.getAwemeSecUid();
+        if (awemeSecUid == null || awemeSecUid.isEmpty()) {
+            log.error("账号{}aweme_sec_uid为空，无法同步订单，请重新授权", accountId);
+            throw new BusinessException(ResultCode.DOUPLUS_API_ERROR, 
+                    "账号缺少aweme_sec_uid，请解除授权后重新授权该账号");
+        }
+
+        // 4. 分页获取所有订单（使用v3.0 API）
+        int totalSynced = 0;
+        int page = 1;
+        int pageSize = 50;
+        int errorCount = 0;
+        final int MAX_ERRORS = 3; // 最大允许连续错误次数
+        
+        while (errorCount < MAX_ERRORS) {
+            try {
+                DouyinAdClient.DouplusOrderListResult result = 
+                        douyinAdClient.getDouplusOrderListV3(accessToken, awemeSecUid, page, pageSize);
+                
+                if (result.getOrders() == null || result.getOrders().isEmpty()) {
+                    log.info("第{}页无数据，同步完成", page);
+                    break;
+                }
+
+                // 重置错误计数
+                errorCount = 0;
+                
+                for (DouyinAdClient.DouplusOrderItem order : result.getOrders()) {
+                    try {
+                        // 检查订单是否已存在
+                        DouplusTask existingTask = getOne(new LambdaQueryWrapper<DouplusTask>()
+                                .eq(DouplusTask::getOrderId, order.getOrderId())
+                                .eq(DouplusTask::getDeleted, 0));
+                        
+                        if (existingTask != null) {
+                            // 更新现有订单的统计数据
+                            updateOrderStats(existingTask, order);
+                        } else {
+                            // 创建新订单
+                            createSyncedOrder(userId, accountId, order);
+                            totalSynced++;
+                        }
+                    } catch (Exception e) {
+                        log.warn("保存订单{}失败: {}", order.getOrderId(), e.getMessage());
+                    }
+                }
+                
+                log.info("同步第{}页完成，本页{}条，新增{}条", page, result.getOrders().size(), totalSynced);
+
+                if (result.getOrders().size() < pageSize) {
+                    log.info("最后一页，同步完成");
+                    break;
+                }
+                page++;
+                
+                // 防止请求过快被限流
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException ignored) {}
+                
+            } catch (Exception e) {
+                errorCount++;
+                log.error("同步DOU+订单失败，页码: {}，错误次数: {}", page, errorCount, e);
+                
+                if (errorCount >= MAX_ERRORS) {
+                    log.warn("连续错误{}次，停止同步，已同步{}条订单", MAX_ERRORS, totalSynced);
+                    break;
+                }
+                
+                // 等待一下再重试
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignored) {}
+            }
+        }
+
+        log.info("用户{}同步了{}个DOU+历史订单", userId, totalSynced);
+        
+        // 5. 同步完订单列表后，调用效果报告API获取统计数据
+        log.info(">>> 准备调用效果报告API...");
+        try {
+            syncOrderStats(userId, accountId, accessToken, awemeSecUid);
+            log.info(">>> 效果报告API调用完成");
+        } catch (Exception e) {
+            log.error(">>> 同步订单效果数据失败: {}", e.getMessage(), e);
+        }
+        
+        return totalSynced;
+    }
+
+    /**
+     * 同步订单效果统计数据
+     * 调用DOU+订单效果报告API获取播放量、点赞量等统计数据
+     */
+    private void syncOrderStats(Long userId, Long accountId, String accessToken, String awemeSecUid) {
+        log.info(">>> syncOrderStats开始: userId={}, accountId={}", userId, accountId);
+        
+        // 获取该账号最近90天的订单
+        List<DouplusTask> tasks = list(new LambdaQueryWrapper<DouplusTask>()
+                .eq(DouplusTask::getUserId, userId)
+                .eq(DouplusTask::getAccountId, accountId)
+                .eq(DouplusTask::getDeleted, 0)
+                .ge(DouplusTask::getCreateTime, LocalDateTime.now().minusDays(90)));
+        
+        log.info(">>> 查询剩90天内订单数: {}", tasks.size());
+        
+        if (tasks.isEmpty()) {
+            log.info("无订单需要同步效果数据");
+            return;
+        }
+        
+        // 收集订单ID
+        List<Long> orderIds = tasks.stream()
+                .filter(t -> t.getOrderId() != null && !t.getOrderId().isEmpty())
+                .map(t -> {
+                    try {
+                        return Long.parseLong(t.getOrderId());
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+        
+        if (orderIds.isEmpty()) {
+            log.info("无有效订单ID");
+            return;
+        }
+        
+        // 计算时间范围：最近90天（API需要完整的日期时间格式）
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        String beginTime = LocalDateTime.now().minusDays(90).withHour(0).withMinute(0).withSecond(0).format(formatter);
+        String endTime = LocalDateTime.now().withHour(23).withMinute(59).withSecond(59).format(formatter);
+        
+        log.info("开始同步订单效果数据，订单数: {}, 时间范围: {} ~ {}", orderIds.size(), beginTime, endTime);
+        
+        // 分批调用报告API（每批最多20个订单）
+        int batchSize = 20;
+        for (int i = 0; i < orderIds.size(); i += batchSize) {
+            List<Long> batchOrderIds = orderIds.subList(i, Math.min(i + batchSize, orderIds.size()));
+            
+            try {
+                DouyinAdClient.DouplusOrderReportResult reportResult = 
+                        douyinAdClient.getDouplusOrderReport(accessToken, awemeSecUid, batchOrderIds, beginTime, endTime);
+                
+                if (reportResult.getOrderStats() != null && !reportResult.getOrderStats().isEmpty()) {
+                    // 更新订单统计数据
+                    for (DouplusTask task : tasks) {
+                        DouyinAdClient.DouplusOrderStats stats = reportResult.getOrderStats().get(task.getOrderId());
+                        if (stats != null) {
+                            updateTaskWithStats(task, stats);
+                        }
+                    }
+                }
+                
+                // 防止请求过快被限流
+                Thread.sleep(300);
+                
+            } catch (Exception e) {
+                log.warn("获取订单效果数据失败: {}", e.getMessage());
+            }
+        }
+        
+        log.info("订单效果数据同步完成");
+    }
+
+    /**
+     * 更新订单统计数据
+     */
+    private void updateTaskWithStats(DouplusTask task, DouyinAdClient.DouplusOrderStats stats) {
+        boolean updated = false;
+        
+        if (stats.getStatCost() != null && stats.getStatCost().compareTo(java.math.BigDecimal.ZERO) > 0) {
+            task.setActualCost(stats.getStatCost());
+            updated = true;
+        }
+        if (stats.getPlayCount() != null && stats.getPlayCount() > 0) {
+            task.setPlayCount(stats.getPlayCount());
+            task.setActualExposure(stats.getPlayCount());
+            updated = true;
+        }
+        if (stats.getLikeCount() != null && stats.getLikeCount() > 0) {
+            task.setLikeCount(stats.getLikeCount());
+            updated = true;
+        }
+        if (stats.getCommentCount() != null && stats.getCommentCount() > 0) {
+            task.setCommentCount(stats.getCommentCount());
+            updated = true;
+        }
+        if (stats.getShareCount() != null && stats.getShareCount() > 0) {
+            task.setShareCount(stats.getShareCount());
+            updated = true;
+        }
+        if (stats.getFollowCount() != null && stats.getFollowCount() > 0) {
+            task.setFollowCount(stats.getFollowCount());
+            updated = true;
+        }
+        if (stats.getClickCount() != null && stats.getClickCount() > 0) {
+            task.setClickCount(stats.getClickCount());
+            updated = true;
+        }
+        
+        if (updated) {
+            updateById(task);
+            log.debug("更新订单{}统计数据: 消耗={}, 播放={}, 点赞={}, 转发={}", 
+                    task.getOrderId(), task.getActualCost(), task.getPlayCount(), task.getLikeCount(), task.getShareCount());
+        }
+    }
+
+    /**
+     * 更新订单统计数据
+     */
+    private void updateOrderStats(DouplusTask task, DouyinAdClient.DouplusOrderItem order) {
+        task.setActualCost(order.getActualCost());
+        task.setPlayCount(order.getPlayCount());
+        task.setLikeCount(order.getLikeCount());
+        task.setCommentCount(order.getCommentCount());
+        task.setShareCount(order.getShareCount());
+        task.setFollowCount(order.getFollowCount());
+        task.setClickCount(order.getClickCount());
+        task.setStatus(convertStatus(order.getStatus()));
+        // 更新视频信息
+        if (order.getAwemeTitle() != null) task.setVideoTitle(order.getAwemeTitle());
+        if (order.getAwemeCover() != null) task.setVideoCoverUrl(order.getAwemeCover());
+        updateById(task);
+    }
+
+    /**
+     * 创建同步的订单
+     */
+    private void createSyncedOrder(Long userId, Long accountId, DouyinAdClient.DouplusOrderItem order) {
+        DouplusTask task = new DouplusTask();
+        task.setUserId(userId);
+        task.setAccountId(accountId);
+        task.setItemId(order.getAwemeId());
+        task.setOrderId(order.getOrderId());
+        task.setTaskType(1);
+        task.setTargetType(1);
+        task.setDuration(order.getDuration() != null ? order.getDuration() : 24);
+        task.setBudget(order.getBudget());
+        task.setActualCost(order.getActualCost());
+        task.setActualExposure(order.getPlayCount());
+        task.setPlayCount(order.getPlayCount());
+        task.setLikeCount(order.getLikeCount());
+        task.setCommentCount(order.getCommentCount());
+        task.setShareCount(order.getShareCount());
+        task.setFollowCount(order.getFollowCount());
+        task.setClickCount(order.getClickCount());
+        task.setSource("synced");
+        task.setAwemeNick(order.getAwemeNick());
+        task.setAwemeAvatar(order.getAwemeAvatar());
+        task.setVideoTitle(order.getAwemeTitle());
+        task.setVideoCoverUrl(order.getAwemeCover());
+        task.setStatus(convertStatus(order.getStatus()));
+        task.setRetryCount(0);
+        task.setMaxRetry(0);
+        
+        // 解析时间
+        if (order.getCreateTime() != null && !order.getCreateTime().isEmpty()) {
+            try {
+                task.setScheduledTime(LocalDateTime.parse(order.getCreateTime().replace(" ", "T")));
+                task.setCreateTime(task.getScheduledTime());
+            } catch (Exception e) {
+                task.setScheduledTime(LocalDateTime.now());
+            }
+        }
+        if (order.getStartTime() != null && !order.getStartTime().isEmpty()) {
+            try {
+                task.setExecutedTime(LocalDateTime.parse(order.getStartTime().replace(" ", "T")));
+            } catch (Exception ignored) {}
+        }
+        if (order.getEndTime() != null && !order.getEndTime().isEmpty()) {
+            try {
+                task.setCompletedTime(LocalDateTime.parse(order.getEndTime().replace(" ", "T")));
+            } catch (Exception ignored) {}
+        }
+        
+        save(task);
+    }
+
+    /**
+     * 转换订单状态 - DOU+官方状态到系统状态
+     * DOU+官方状态：
+     * - UNPAID: 未支付
+     * - AUDITING: 审核中
+     * - DELIVERING: 投放中
+     * - FINISHED/COMPLETE: 投放完成/结束
+     * - TERMINATED/STOPPED: 投放终止
+     * - AUDIT_PAUSE: 审核暂停
+     * - AUDIT_REJECTED/REJECTED: 审核不通过
+     */
+    private String convertStatus(String apiStatus) {
+        if (apiStatus == null) return "FINISHED";
+        String status = apiStatus.toUpperCase().trim();
+        
+        // 直接保存原始状态，让前端映射显示
+        return switch (status) {
+            // 未支付
+            case "UNPAID", "NOT_PAY" -> "UNPAID";
+            // 审核中
+            case "AUDITING", "AUDIT", "REVIEWING" -> "AUDITING";
+            // 投放中
+            case "DELIVERING", "RUNNING", "ACTIVE" -> "DELIVERING";
+            // 投放完成
+            case "FINISHED", "COMPLETE", "COMPLETED", "SUCCESS", "DONE" -> "FINISHED";
+            // 投放终止
+            case "TERMINATED", "STOPPED", "STOP", "CANCELLED", "CANCELED" -> "TERMINATED";
+            // 审核暂停
+            case "AUDIT_PAUSE", "PAUSED", "PAUSE" -> "AUDIT_PAUSE";
+            // 审核不通过
+            case "AUDIT_REJECTED", "REJECTED", "FAILED", "FAIL" -> "AUDIT_REJECTED";
+            // 其他状态保持原样
+            default -> status;
+        };
+    }
 
     /**
      * 创建投放任务

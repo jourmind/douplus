@@ -81,6 +81,7 @@ export interface DouplusTask {
   accountAvatar: string
   itemId: string
   videoTitle: string
+  videoCover: string
   videoCoverUrl: string
   taskType: number
   targetType: number
@@ -92,6 +93,14 @@ export interface DouplusTask {
   actualCost: number
   expectedExposure: number
   actualExposure: number
+  // 新增指标字段
+  playCount: number          // 播放量
+  likeCount: number          // 点赞量
+  commentCount: number       // 评论量
+  shareCount: number         // 转发量
+  clickCount: number         // 点击量
+  componentClickCount: number // 组件点击量
+  play5sRate: number         // 5秒完播率
   status: string
   statusText: string
   orderId: string
@@ -100,8 +109,12 @@ export interface DouplusTask {
   scheduledTime: string
   executedTime: string
   completedTime: string
+  orderEndTime: string     // 订单结束时间 = 生效时间 + 投放时长
   createTime: string
 }
+
+// 投放任务VO（视图对象）
+export type DouplusTaskVO = DouplusTask
 
 // 创建投放任务请求
 export interface CreateTaskRequest {

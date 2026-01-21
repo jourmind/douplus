@@ -1,34 +1,38 @@
 <template>
-  <div class="main-layout">
+  <div class="main-layout" :class="{ 'sidebar-collapsed': isCollapsed }">
     <!-- 侧边栏 -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ collapsed: isCollapsed }">
       <div class="logo">
-        <span style="color: #ff6b35">DOU</span>+
+        <template v-if="!isCollapsed">
+          <span style="color: #ff6b35">DOU</span>+
+        </template>
+        <template v-else>
+          <span style="color: #ff6b35; font-size: 16px;">D+</span>
+        </template>
       </div>
       
       <div class="menu">
         <el-menu
           :default-active="activeMenu"
           :router="true"
+          :collapse="isCollapsed"
           background-color="transparent"
           text-color="#9ca3af"
           active-text-color="#ff6b35"
         >
+          <!-- 首页概览 -->
           <el-menu-item index="/dashboard">
             <el-icon><HomeFilled /></el-icon>
-            <span>首页概览</span>
+            <template #title><span>首页概览</span></template>
           </el-menu-item>
           
-          <el-sub-menu index="comment-menu">
-            <template #title>
-              <el-icon><ChatDotRound /></el-icon>
-              <span>评论管理</span>
-            </template>
-            <el-menu-item index="/comment/list">实时删除新增评论</el-menu-item>
-            <el-menu-item index="/comment/negative">实时删除负面评论</el-menu-item>
-            <el-menu-item index="/comment/blacklist">黑名单管理</el-menu-item>
-          </el-sub-menu>
+          <!-- 账号管理 -->
+          <el-menu-item index="/account">
+            <el-icon><User /></el-icon>
+            <template #title><span>账号管理</span></template>
+          </el-menu-item>
           
+          <!-- DOU+监控 -->
           <el-sub-menu index="douplus-menu">
             <template #title>
               <el-icon><VideoPlay /></el-icon>
@@ -38,11 +42,25 @@
             <el-menu-item index="/douplus/records">DOU+投放记录</el-menu-item>
           </el-sub-menu>
           
-          <el-menu-item index="/account">
-            <el-icon><User /></el-icon>
-            <span>账号管理</span>
-          </el-menu-item>
+          <!-- 评论管理 -->
+          <el-sub-menu index="comment-menu">
+            <template #title>
+              <el-icon><ChatDotRound /></el-icon>
+              <span>评论管理</span>
+            </template>
+            <el-menu-item index="/comment/list">实时删除新增评论</el-menu-item>
+            <el-menu-item index="/comment/negative">实时删除负面评论</el-menu-item>
+            <el-menu-item index="/comment/blacklist">黑名单管理</el-menu-item>
+          </el-sub-menu>
         </el-menu>
+      </div>
+      
+      <!-- 收起/展开按钮 -->
+      <div class="collapse-btn" @click="toggleSidebar">
+        <el-icon :size="18">
+          <Fold v-if="!isCollapsed" />
+          <Expand v-else />
+        </el-icon>
       </div>
     </aside>
     
@@ -50,7 +68,12 @@
     <div class="main-container">
       <!-- 顶部导航 -->
       <header class="header">
-        <div class="tabs">
+        <div class="header-left">
+          <el-icon class="toggle-btn" :size="20" @click="toggleSidebar">
+            <Fold v-if="!isCollapsed" />
+            <Expand v-else />
+          </el-icon>
+          <div class="tabs">
           <el-tag 
             v-for="tab in tabs" 
             :key="tab.path"
@@ -62,6 +85,7 @@
           >
             {{ tab.title }}
           </el-tag>
+          </div>
         </div>
         
         <div class="user-info">
@@ -125,12 +149,20 @@
 import { ref, computed, reactive, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { HomeFilled, ChatDotRound, VideoPlay, User, ArrowDown, Fold, Expand } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { changePassword, setInvestPassword } from '@/api/auth'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+
+// 侧边栏收起状态
+const isCollapsed = ref(false)
+
+const toggleSidebar = () => {
+  isCollapsed.value = !isCollapsed.value
+}
 
 // 标签页
 interface Tab {

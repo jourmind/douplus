@@ -107,12 +107,12 @@ public class TokenRefreshTask {
                 }
             }
             
-            // 调用刷新Token API
-            String url = "https://ad.oceanengine.com/open_api/oauth2/refresh_token/";
+            // 调用抖音开放平台刷新Token API
+            String url = "https://open.douyin.com/oauth/refresh_token/";
             
             Map<String, Object> params = new HashMap<>();
-            params.put("app_id", appId);
-            params.put("secret", appSecret);
+            params.put("client_key", appId);
+            params.put("client_secret", appSecret);
             params.put("grant_type", "refresh_token");
             params.put("refresh_token", refreshToken);
             

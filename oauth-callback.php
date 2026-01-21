@@ -156,7 +156,44 @@ function getAdvertiserInfo($accessToken, $advertiserId) {
 }
 
 /**
- * 获取抖音用户信息（通过user/info接口）
+ * 获取用户信息（通过user/info接口 - 新版）
+ */
+function getUserInfoV2($accessToken) {
+    $url = 'https://api.oceanengine.com/open_api/2/user/info/';
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER => [
+            'Access-Token: ' . $accessToken,
+            'Content-Type: application/json'
+        ]
+    ]);
+    
+    $response = curl_exec($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+    
+    if ($error) {
+        debugLog('User Info V2 Error', $error);
+        return null;
+    }
+    
+    $result = json_decode($response, true);
+    debugLog('User Info V2 Response', $result);
+    
+    if (isset($result['data'])) {
+        return $result['data'];
+    }
+    
+    return null;
+}
+
+/**
+ * 获取用户信息（通过user/info接口）
  */
 function getUserInfo($accessToken) {
     $url = 'https://ad.oceanengine.com/open_api/2/user/info/';
@@ -315,9 +352,52 @@ function getDouplusOrderList($accessToken, $advertiserId) {
 }
 
 /**
+ * 获取已授权账户信息（获取aweme_sec_uid）
+ */
+function getAuthorizedAccounts($accessToken) {
+    $url = 'https://api.oceanengine.com/open_api/oauth2/advertiser/get/';
+    $params = ['access_token' => $accessToken];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url . '?' . http_build_query($params),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
+    
+    $response = curl_exec($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+    
+    if ($error) {
+        debugLog('Authorized Accounts Error', $error);
+        return null;
+    }
+    
+    $result = json_decode($response, true);
+    debugLog('Authorized Accounts Response', $result);
+    
+    // 查找PLATFORM_ROLE_AWEME类型的账户，获取aweme_sec_uid
+    if (isset($result['data']['list']) && is_array($result['data']['list'])) {
+        foreach ($result['data']['list'] as $account) {
+            if (($account['account_role'] ?? '') === 'PLATFORM_ROLE_AWEME') {
+                return [
+                    'aweme_sec_uid' => $account['account_string_id'] ?? '',
+                    'account_name' => $account['account_name'] ?? '',
+                    'advertiser_name' => $account['advertiser_name'] ?? ''
+                ];
+            }
+        }
+    }
+    
+    return null;
+}
+
+/**
  * 保存账号到数据库
  */
-function saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId) {
+function saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId, $awemeSecUid = '') {
     $pdo = getDB();
     
     $accessToken = $tokenData['access_token'];
@@ -341,6 +421,7 @@ function saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId) {
                 token_expires_at = DATE_ADD(NOW(), INTERVAL ? SECOND),
                 nickname = ?,
                 avatar = ?,
+                aweme_sec_uid = ?,
                 status = 1,
                 update_time = NOW()
                 WHERE id = ?';
@@ -351,14 +432,15 @@ function saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId) {
             $expiresIn,
             $nickname,
             $avatar,
+            $awemeSecUid,
             $existing['id']
         ]);
         return ['action' => 'update', 'id' => $existing['id'], 'nickname' => $nickname];
     } else {
         // 插入新账号
         $sql = 'INSERT INTO douyin_account 
-                (user_id, open_id, advertiser_id, nickname, avatar, access_token, refresh_token, token_expires_at, status, daily_limit, create_time, update_time, deleted)
-                VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), 1, 10000.00, NOW(), NOW(), 0)';
+                (user_id, open_id, advertiser_id, nickname, avatar, access_token, refresh_token, token_expires_at, aweme_sec_uid, status, daily_limit, create_time, update_time, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, 1, 10000.00, NOW(), NOW(), 0)';
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             $userId,
@@ -368,7 +450,8 @@ function saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId) {
             $avatar,
             $encryptedAccessToken,
             $encryptedRefreshToken,
-            $expiresIn
+            $expiresIn,
+            $awemeSecUid
         ]);
         return ['action' => 'insert', 'id' => $pdo->lastInsertId(), 'nickname' => $nickname];
     }
@@ -533,8 +616,41 @@ try {
     
     debugLog('Final nickname and avatar', ['nickname' => $nickname, 'avatar' => $avatar]);
     
+    // 获取aweme_sec_uid和真实昵称（优先使用这里的昵称）
+    $awemeSecUid = '';
+    try {
+        $authorizedAccounts = getAuthorizedAccounts($tokenData['access_token']);
+        if ($authorizedAccounts && !empty($authorizedAccounts['aweme_sec_uid'])) {
+            $awemeSecUid = $authorizedAccounts['aweme_sec_uid'];
+            debugLog('Got aweme_sec_uid', $awemeSecUid);
+            
+            // 优先使用account_name作为昵称（这是真实的抖音昵称）
+            if (!empty($authorizedAccounts['account_name'])) {
+                $nickname = $authorizedAccounts['account_name'];
+                debugLog('Got real nickname from authorized accounts', $nickname);
+            }
+        }
+    } catch (Exception $e) {
+        debugLog('Get authorized accounts error', $e->getMessage());
+    }
+    
+    // 如果还是没有真实昵称，尝试使用新版user/info接口
+    if (empty($nickname) || strpos($nickname, '用户') === 0) {
+        try {
+            $userInfoV2 = getUserInfoV2($tokenData['access_token']);
+            if ($userInfoV2 && !empty($userInfoV2['display_name'])) {
+                $nickname = $userInfoV2['display_name'];
+                debugLog('Got nickname from user/info V2', $nickname);
+            }
+        } catch (Exception $e) {
+            debugLog('Get user info V2 error', $e->getMessage());
+        }
+    }
+    
+    debugLog('Final resolved nickname', $nickname);
+    
     // 3. 保存到数据库
-    $result = saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId);
+    $result = saveAccount($userId, $tokenData, $nickname, $avatar, $advertiserId, $awemeSecUid);
     
     $accountName = $result['nickname'];
     $action = $result['action'] === 'insert' ? '新增' : '更新';

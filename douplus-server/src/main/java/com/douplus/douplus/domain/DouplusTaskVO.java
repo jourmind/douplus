@@ -31,6 +31,15 @@ public class DouplusTaskVO {
     private BigDecimal actualCost;
     private Integer expectedExposure;
     private Integer actualExposure;
+    private Integer playCount;
+    private Integer likeCount;
+    private Integer commentCount;
+    private Integer shareCount;
+    private Integer followCount;
+    private Integer clickCount;
+    private String source;
+    private String awemeNick;
+    private String awemeAvatar;
     private String status;
     private String statusText;
     private String orderId;
@@ -39,6 +48,7 @@ public class DouplusTaskVO {
     private LocalDateTime scheduledTime;
     private LocalDateTime executedTime;
     private LocalDateTime completedTime;
+    private LocalDateTime orderEndTime;  // 订单结束时间 = 生效时间 + 投放时长
     private LocalDateTime createTime;
 
     /**
@@ -48,6 +58,16 @@ public class DouplusTaskVO {
         if (task == null) {
             return null;
         }
+        
+        // 计算订单结束时间 = 生效时间(executedTime) + 投放时长(duration小时)
+        LocalDateTime orderEndTime = null;
+        if (task.getExecutedTime() != null && task.getDuration() != null) {
+            orderEndTime = task.getExecutedTime().plusHours(task.getDuration());
+        } else if (task.getScheduledTime() != null && task.getDuration() != null) {
+            // 如果还未执行，用计划时间估算
+            orderEndTime = task.getScheduledTime().plusHours(task.getDuration());
+        }
+        
         return DouplusTaskVO.builder()
                 .id(task.getId())
                 .accountId(task.getAccountId())
@@ -59,6 +79,17 @@ public class DouplusTaskVO {
                 .actualCost(task.getActualCost())
                 .expectedExposure(task.getExpectedExposure())
                 .actualExposure(task.getActualExposure())
+                .playCount(task.getPlayCount())
+                .likeCount(task.getLikeCount())
+                .commentCount(task.getCommentCount())
+                .shareCount(task.getShareCount())
+                .followCount(task.getFollowCount())
+                .clickCount(task.getClickCount())
+                .source(task.getSource())
+                .awemeNick(task.getAwemeNick())
+                .awemeAvatar(task.getAwemeAvatar())
+                .videoTitle(task.getVideoTitle())
+                .videoCoverUrl(task.getVideoCoverUrl())
                 .status(task.getStatus())
                 .statusText(getStatusText(task.getStatus()))
                 .orderId(task.getOrderId())
@@ -67,6 +98,7 @@ public class DouplusTaskVO {
                 .scheduledTime(task.getScheduledTime())
                 .executedTime(task.getExecutedTime())
                 .completedTime(task.getCompletedTime())
+                .orderEndTime(orderEndTime)
                 .createTime(task.getCreateTime())
                 .build();
     }

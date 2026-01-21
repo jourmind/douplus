@@ -1,4 +1,4 @@
-import { get, post } from '@/utils/request'
+import { get, post, postLong } from '@/utils/request'
 import type { DouplusTask, CreateTaskRequest } from './types'
 
 /**
@@ -27,6 +27,18 @@ export const getTaskPage = (params: {
 }
 
 /**
+ * 查询指定账号的投放记录
+ */
+export const getTaskList = (params: {
+  accountId?: number
+  pageNum?: number
+  pageSize?: number
+  status?: string
+}) => {
+  return get('/douplus/task/page', params)
+}
+
+/**
  * 取消投放任务
  */
 export const cancelTask = (id: number) => {
@@ -38,4 +50,32 @@ export const cancelTask = (id: number) => {
  */
 export const getTaskDetail = (id: number) => {
   return get(`/douplus/task/${id}`)
+}
+
+// 同步状态类型
+export interface SyncStatus {
+  status: 'idle' | 'syncing' | 'completed' | 'error'
+  count: number
+  message: string
+}
+
+/**
+ * 同步单个账号的DOU+历史订单（异步）
+ */
+export const syncOrders = (accountId: number) => {
+  return postLong<SyncStatus>(`/douplus/task/sync/${accountId}`)
+}
+
+/**
+ * 同步所有账号的DOU+历史订单（异步）
+ */
+export const syncAllOrders = () => {
+  return postLong<SyncStatus>('/douplus/task/sync-all')
+}
+
+/**
+ * 查询同步状态
+ */
+export const getSyncStatus = () => {
+  return get<SyncStatus>('/douplus/task/sync-status')
 }
