@@ -580,118 +580,134 @@ public class DouyinAdClient {
      * 获取DOU+订单效果报告（v3.0 API）
      * 获取播放量、点赞量、转发量、消耗等统计数据
      * API: /open_api/v3.0/douplus/order/report/
-     * 注意: v3.0 API使用POST请求 + JSON body
+     * 方法: GET
+     * 必填: Access-Token(header), aweme_sec_uid, stat_time(JSON格式)
      */
     public DouplusOrderReportResult getDouplusOrderReport(String accessToken, String awemeSecUid, 
             List<Long> orderIds, String beginTime, String endTime) {
-        String url = "https://api.oceanengine.com/open_api/v3.0/douplus/order/report/";
         
-        // 构建JSON请求体（v3.0 API使用POST + JSON body）
-        JSONObject requestBody = new JSONObject();
-        requestBody.put("aweme_sec_uid", awemeSecUid);
+        DouplusOrderReportResult result = new DouplusOrderReportResult();
+        Map<String, DouplusOrderStats> allStats = new HashMap<>();
         
-        // 统计时间范围
-        JSONObject statTime = new JSONObject();
-        statTime.put("begin_time", beginTime);
-        statTime.put("end_time", endTime);
-        requestBody.put("stat_time", statTime);
+        int page = 1;
+        int pageSize = 100;
+        int totalPage = 1;
         
-        // 分页参数
-        requestBody.put("page", 1);
-        requestBody.put("page_size", 100);
-        
-        // 订单ID过滤（如果指定）
-        if (orderIds != null && !orderIds.isEmpty()) {
-            JSONObject filter = new JSONObject();
-            filter.put("order_ids", orderIds);
-            requestBody.put("filter", filter);
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Access-Token", accessToken);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
         try {
-            HttpEntity<String> entity = new HttpEntity<>(requestBody.toJSONString(), headers);
-            log.info("调用DOU+订单报告API: {}, body: {}", url, requestBody.toJSONString());
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url, HttpMethod.POST, entity, String.class);
+            // stat_time参数必须用URL编码的JSON格式传递
+            String statTimeJson = String.format("{\"begin_time\":\"%s\",\"end_time\":\"%s\"}", beginTime, endTime);
+            String encodedStatTime = java.net.URLEncoder.encode(statTimeJson, "UTF-8");
             
-            JSONObject json = JSON.parseObject(response.getBody());
-            log.info("DOU+ Order Report Response: {}", response.getBody());
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Access-Token", accessToken);
             
-            int errCode = json.getIntValue("code", -1);
-            if (errCode != 0) {
-                String errMsg = json.getString("message");
-                log.error("获取DOU+订单报告失败(v3.0): code={}, msg={}", errCode, errMsg);
-                // 不抛出异常，返回空结果
-                return new DouplusOrderReportResult();
-            }
-
-            JSONObject data = json.getJSONObject("data");
-            DouplusOrderReportResult result = new DouplusOrderReportResult();
-            result.setRawData(data);
-            
-            // 解析报告数据列表
-            if (data != null && data.containsKey("list")) {
-                Map<String, DouplusOrderStats> statsMap = new HashMap<>();
-                for (Object item : data.getJSONArray("list")) {
-                    JSONObject reportItem = (JSONObject) item;
-                    DouplusOrderStats stats = parseOrderStats(reportItem);
-                    if (stats != null && stats.getOrderId() != null) {
-                        statsMap.put(stats.getOrderId(), stats);
-                    }
+            // 分页循环获取所有数据
+            while (page <= totalPage) {
+                // 构建完整URL字符串（已包含编码的stat_time）
+                String urlStr = "https://api.oceanengine.com/open_api/v3.0/douplus/order/report/"
+                        + "?aweme_sec_uid=" + awemeSecUid
+                        + "&stat_time=" + encodedStatTime
+                        + "&page=" + page
+                        + "&page_size=" + pageSize;
+                
+                log.info("调用DOU+订单报告API (GET) 第{}页: {}", page, urlStr);
+                
+                // 使用URI对象避免RestTemplate二次编码
+                java.net.URI uri = new java.net.URI(urlStr);
+                
+                HttpEntity<String> entity = new HttpEntity<>(headers);
+                ResponseEntity<String> response = restTemplate.exchange(
+                        uri, HttpMethod.GET, entity, String.class);
+                
+                JSONObject json = JSON.parseObject(response.getBody());
+                
+                int errCode = json.getIntValue("code", -1);
+                if (errCode != 0) {
+                    String errMsg = json.getString("message");
+                    log.error("获取DOU+订单报告失败(v3.0): code={}, msg={}", errCode, errMsg);
+                    break;
                 }
-                result.setOrderStats(statsMap);
-                log.info("成功解析{}条订单统计数据", statsMap.size());
+    
+                JSONObject data = json.getJSONObject("data");
+                result.setRawData(data);
+                
+                // 获取分页信息
+                if (data != null && data.containsKey("page_info")) {
+                    JSONObject pageInfo = data.getJSONObject("page_info");
+                    totalPage = pageInfo.getIntValue("total_page", 1);
+                }
+                
+                // 解析当前页数据
+                if (data != null && data.containsKey("order_metrics")) {
+                    for (Object item : data.getJSONArray("order_metrics")) {
+                        JSONObject reportItem = (JSONObject) item;
+                        DouplusOrderStats stats = parseOrderStatsV3(reportItem);
+                        if (stats != null && stats.getOrderId() != null) {
+                            allStats.put(stats.getOrderId(), stats);
+                        }
+                    }
+                    log.info("第{}页获取{}条数据，累计{}条", page, 
+                            data.getJSONArray("order_metrics").size(), allStats.size());
+                }
+                
+                page++;
+                
+                // 防止请求过快
+                if (page <= totalPage) {
+                    Thread.sleep(200);
+                }
             }
             
-            return result;
+            result.setOrderStats(allStats);
+            log.info("效果报告API总共获取{}条订单数据", allStats.size());
             
         } catch (Exception e) {
             log.error("获取DOU+订单报告异常(v3.0)", e);
-            return new DouplusOrderReportResult();
         }
+        
+        return result;
     }
-
+    
     /**
-     * 解析订单统计数据
+     * 解析v3.0订单报告统计数据
+     * 结构: { dimension_data: {order_id, ad_id, ...}, metrics_data: {total_play, dy_comment, ...} }
      */
-    private DouplusOrderStats parseOrderStats(JSONObject reportItem) {
+    private DouplusOrderStats parseOrderStatsV3(JSONObject reportItem) {
         try {
             DouplusOrderStats stats = new DouplusOrderStats();
-            log.info("解析订单报告数据: {}", reportItem.toJSONString());
             
-            // 订单ID
-            stats.setOrderId(String.valueOf(reportItem.getLongValue("order_id", 0)));
+            // 订单ID在dimension_data中
+            JSONObject dimensionData = reportItem.getJSONObject("dimension_data");
+            if (dimensionData != null) {
+                stats.setOrderId(String.valueOf(dimensionData.getLongValue("order_id", 0)));
+            }
             
-            // 消耗金额（单位：分）
-            stats.setStatCost(BigDecimal.valueOf(reportItem.getLongValue("stat_cost", 0) / 100.0));
-            
-            // 播放量 - 可能的字段名
-            int playCount = reportItem.getIntValue("play_cnt", 0);
-            if (playCount == 0) playCount = reportItem.getIntValue("show_cnt", 0);
-            if (playCount == 0) playCount = reportItem.getIntValue("vv", 0);  // video view
-            stats.setPlayCount(playCount);
-            
-            // 点赞量
-            stats.setLikeCount(reportItem.getIntValue("like_cnt", 0));
-            
-            // 评论量
-            stats.setCommentCount(reportItem.getIntValue("comment_cnt", 0));
-            
-            // 转发量/分享量
-            int shareCount = reportItem.getIntValue("share_cnt", 0);
-            if (shareCount == 0) shareCount = reportItem.getIntValue("forward_cnt", 0);
-            stats.setShareCount(shareCount);
-            
-            // 新增粉丝
-            stats.setFollowCount(reportItem.getIntValue("follow_cnt", 0));
-            
-            // 组件点击/转化量
-            int clickCount = reportItem.getIntValue("click_cnt", 0);
-            if (clickCount == 0) clickCount = reportItem.getIntValue("convert_cnt", 0);
-            stats.setClickCount(clickCount);
+            // 效果数据在metrics_data中
+            JSONObject metricsData = reportItem.getJSONObject("metrics_data");
+            if (metricsData != null) {
+                // 消耗金额（单位：分）
+                stats.setStatCost(BigDecimal.valueOf(metricsData.getLongValue("stat_cost", 0) / 100.0));
+                // 播放量 - v3.0字段名是total_play
+                stats.setPlayCount(metricsData.getIntValue("total_play", 0));
+                // 点赞量 - v3.0字段名是custom_like
+                stats.setLikeCount(metricsData.getIntValue("custom_like", 0));
+                // 评论量 - v3.0字段名是dy_comment
+                stats.setCommentCount(metricsData.getIntValue("dy_comment", 0));
+                // 转发量 - v3.0字段名是dy_share
+                stats.setShareCount(metricsData.getIntValue("dy_share", 0));
+                // 新增粉丝 - v3.0字段名是dy_follow
+                stats.setFollowCount(metricsData.getIntValue("dy_follow", 0));
+                // 主页访问
+                int homeVisited = metricsData.getIntValue("dy_home_visited", 0);
+                // 转化量
+                int convertCnt = metricsData.getIntValue("dp_target_convert_cnt", 0);
+                stats.setClickCount(convertCnt > 0 ? convertCnt : homeVisited);
+                
+                log.debug("解析订单{}: 播放={}, 点赞={}, 评论={}, 转发={}, 关注={}, 消耗={}",
+                        stats.getOrderId(), stats.getPlayCount(), stats.getLikeCount(),
+                        stats.getCommentCount(), stats.getShareCount(), stats.getFollowCount(),
+                        stats.getStatCost());
+            }
             
             return stats;
         } catch (Exception e) {

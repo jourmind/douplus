@@ -130,6 +130,7 @@ public class TokenRefreshTask {
             
             if (response.getStatusCode() == HttpStatus.OK) {
                 JSONObject result = JSON.parseObject(response.getBody());
+                log.info("刷新Token API响应: {}", response.getBody());
                 JSONObject data = result.getJSONObject("data");
                 
                 if (data != null && data.getString("access_token") != null) {

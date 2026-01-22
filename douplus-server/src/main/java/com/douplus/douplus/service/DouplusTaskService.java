@@ -167,70 +167,60 @@ public class DouplusTaskService extends ServiceImpl<DouplusTaskMapper, DouplusTa
     private void syncOrderStats(Long userId, Long accountId, String accessToken, String awemeSecUid) {
         log.info(">>> syncOrderStats开始: userId={}, accountId={}", userId, accountId);
         
-        // 获取该账号最近90天的订单
+        // 获取该账号所有订单（用于后续更新）
         List<DouplusTask> tasks = list(new LambdaQueryWrapper<DouplusTask>()
                 .eq(DouplusTask::getUserId, userId)
                 .eq(DouplusTask::getAccountId, accountId)
                 .eq(DouplusTask::getDeleted, 0)
-                .ge(DouplusTask::getCreateTime, LocalDateTime.now().minusDays(90)));
+                .isNotNull(DouplusTask::getOrderId));
         
-        log.info(">>> 查询剩90天内订单数: {}", tasks.size());
+        log.info(">>> 查询到{}条订单需要同步效果数据", tasks.size());
         
         if (tasks.isEmpty()) {
             log.info("无订单需要同步效果数据");
             return;
         }
         
-        // 收集订单ID
-        List<Long> orderIds = tasks.stream()
+        // 构建订单ID -> Task的映射，方便后续查找
+        Map<String, DouplusTask> taskMap = tasks.stream()
                 .filter(t -> t.getOrderId() != null && !t.getOrderId().isEmpty())
-                .map(t -> {
-                    try {
-                        return Long.parseLong(t.getOrderId());
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .filter(id -> id != null)
-                .collect(Collectors.toList());
+                .collect(Collectors.toMap(DouplusTask::getOrderId, t -> t, (a, b) -> a));
         
-        if (orderIds.isEmpty()) {
-            log.info("无有效订单ID");
-            return;
-        }
+        // 计算时间范围：最近90天（避免超限）
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        String beginTime = LocalDateTime.now().minusDays(90).format(formatter);
+        String endTime = LocalDateTime.now().format(formatter);
         
-        // 计算时间范围：最近90天（API需要完整的日期时间格式）
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        String beginTime = LocalDateTime.now().minusDays(90).withHour(0).withMinute(0).withSecond(0).format(formatter);
-        String endTime = LocalDateTime.now().withHour(23).withMinute(59).withSecond(59).format(formatter);
+        log.info("调用效果报告API，时间范围: {} ~ {}", beginTime, endTime);
         
-        log.info("开始同步订单效果数据，订单数: {}, 时间范围: {} ~ {}", orderIds.size(), beginTime, endTime);
-        
-        // 分批调用报告API（每批最多20个订单）
-        int batchSize = 20;
-        for (int i = 0; i < orderIds.size(); i += batchSize) {
-            List<Long> batchOrderIds = orderIds.subList(i, Math.min(i + batchSize, orderIds.size()));
+        // 调用效果报告API（直接获取全部数据，API会分页返回）
+        try {
+            DouyinAdClient.DouplusOrderReportResult reportResult = 
+                    douyinAdClient.getDouplusOrderReport(accessToken, awemeSecUid, null, beginTime, endTime);
             
-            try {
-                DouyinAdClient.DouplusOrderReportResult reportResult = 
-                        douyinAdClient.getDouplusOrderReport(accessToken, awemeSecUid, batchOrderIds, beginTime, endTime);
-                
-                if (reportResult.getOrderStats() != null && !reportResult.getOrderStats().isEmpty()) {
-                    // 更新订单统计数据
-                    for (DouplusTask task : tasks) {
-                        DouyinAdClient.DouplusOrderStats stats = reportResult.getOrderStats().get(task.getOrderId());
-                        if (stats != null) {
-                            updateTaskWithStats(task, stats);
-                        }
+            log.info(">>> API返回{}条效果数据", 
+                    reportResult.getOrderStats() != null ? reportResult.getOrderStats().size() : 0);
+            
+            if (reportResult.getOrderStats() != null && !reportResult.getOrderStats().isEmpty()) {
+                int updatedCount = 0;
+                // 遍历API返回的效果数据，更新对应订单
+                for (Map.Entry<String, DouyinAdClient.DouplusOrderStats> entry : reportResult.getOrderStats().entrySet()) {
+                    String orderId = entry.getKey();
+                    DouyinAdClient.DouplusOrderStats stats = entry.getValue();
+                    
+                    DouplusTask task = taskMap.get(orderId);
+                    if (task != null) {
+                        updateTaskWithStats(task, stats);
+                        updatedCount++;
                     }
                 }
-                
-                // 防止请求过快被限流
-                Thread.sleep(300);
-                
-            } catch (Exception e) {
-                log.warn("获取订单效果数据失败: {}", e.getMessage());
+                log.info(">>> 成功更新{}条订单的效果数据", updatedCount);
+            } else {
+                log.warn(">>> API返回的效果数据为空");
             }
+            
+        } catch (Exception e) {
+            log.error("获取订单效果数据失败: {}", e.getMessage(), e);
         }
         
         log.info("订单效果数据同步完成");
