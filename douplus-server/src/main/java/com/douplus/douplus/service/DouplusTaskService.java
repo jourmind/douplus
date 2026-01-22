@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -562,24 +563,123 @@ public class DouplusTaskService extends ServiceImpl<DouplusTaskMapper, DouplusTa
 
     /**
      * 分页查询任务
+     * @param userId 用户ID
+     * @param pageNum 页码
+     * @param pageSize 每页大小（-1表示获取全部）
+     * @param status 状态筛选
+     * @param accountId 账号ID筛选
+     * @param sortField 排序字段（createTime, actualCost, playCount等）
+     * @param sortOrder 排序方向（asc, desc）
      */
-    public Page<DouplusTaskVO> pageByUserId(Long userId, Integer pageNum, Integer pageSize, String status) {
+    public Page<DouplusTaskVO> pageByUserId(Long userId, Integer pageNum, Integer pageSize, String status,
+                                             Long accountId, String sortField, String sortOrder) {
         LambdaQueryWrapper<DouplusTask> wrapper = new LambdaQueryWrapper<DouplusTask>()
                 .eq(DouplusTask::getUserId, userId)
-                .eq(DouplusTask::getDeleted, 0)
-                .orderByDesc(DouplusTask::getCreateTime);
+                .eq(DouplusTask::getDeleted, 0);
         
         if (status != null && !status.isEmpty()) {
             wrapper.eq(DouplusTask::getStatus, status);
         }
         
-        Page<DouplusTask> page = page(new Page<>(pageNum, pageSize), wrapper);
+        if (accountId != null) {
+            wrapper.eq(DouplusTask::getAccountId, accountId);
+        }
+        
+        // 动态排序
+        boolean isAsc = "asc".equalsIgnoreCase(sortOrder);
+        if ("actualCost".equals(sortField)) {
+            if (isAsc) wrapper.orderByAsc(DouplusTask::getActualCost);
+            else wrapper.orderByDesc(DouplusTask::getActualCost);
+        } else if ("playCount".equals(sortField) || "playPer100".equals(sortField)) {
+            if (isAsc) wrapper.orderByAsc(DouplusTask::getPlayCount);
+            else wrapper.orderByDesc(DouplusTask::getPlayCount);
+        } else if ("budget".equals(sortField)) {
+            if (isAsc) wrapper.orderByAsc(DouplusTask::getBudget);
+            else wrapper.orderByDesc(DouplusTask::getBudget);
+        } else if ("scheduledTime".equals(sortField)) {
+            if (isAsc) wrapper.orderByAsc(DouplusTask::getScheduledTime);
+            else wrapper.orderByDesc(DouplusTask::getScheduledTime);
+        } else if ("costPerPlay".equals(sortField)) {
+            // 转化成本 = 消耗 / 播放量（每次播放成本）
+            String orderDir = isAsc ? "ASC" : "DESC";
+            wrapper.last("ORDER BY (actual_cost / NULLIF(play_count, 0)) " + orderDir);
+        } else if ("shareRate".equals(sortField)) {
+            // 百转发率 = 转发数 / 播放量
+            String orderDir = isAsc ? "ASC" : "DESC";
+            wrapper.last("ORDER BY (share_count * 1.0 / NULLIF(play_count, 1)) " + orderDir);
+        } else {
+            // 默认按创建时间排序
+            if (isAsc) wrapper.orderByAsc(DouplusTask::getCreateTime);
+            else wrapper.orderByDesc(DouplusTask::getCreateTime);
+        }
+        
+        // pageSize为-1时获取全部数据
+        Page<DouplusTask> page;
+        if (pageSize != null && pageSize == -1) {
+            // 先查询总数
+            long total = count(wrapper);
+            page = page(new Page<>(1, Math.max(total, 1)), wrapper);
+        } else {
+            page = page(new Page<>(pageNum, pageSize), wrapper);
+        }
         
         Page<DouplusTaskVO> resultPage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
         resultPage.setRecords(page.getRecords().stream()
                 .map(this::toVO)
                 .collect(Collectors.toList()));
         return resultPage;
+    }
+
+    /**
+     * 获取指定账号的订单统计数据
+     */
+    public Map<String, Object> getAccountStats(Long userId, Long accountId) {
+        LambdaQueryWrapper<DouplusTask> wrapper = new LambdaQueryWrapper<DouplusTask>()
+                .eq(DouplusTask::getUserId, userId)
+                .eq(DouplusTask::getAccountId, accountId)
+                .eq(DouplusTask::getDeleted, 0);
+        
+        List<DouplusTask> tasks = list(wrapper);
+        
+        // 计算统计数据
+        java.math.BigDecimal totalCost = java.math.BigDecimal.ZERO;
+        long totalPlayCount = 0;
+        long totalLikeCount = 0;
+        long totalCommentCount = 0;
+        long totalShareCount = 0;
+        long totalFollowCount = 0;
+        
+        for (DouplusTask task : tasks) {
+            if (task.getActualCost() != null) {
+                totalCost = totalCost.add(task.getActualCost());
+            }
+            if (task.getPlayCount() != null) {
+                totalPlayCount += task.getPlayCount();
+            }
+            if (task.getLikeCount() != null) {
+                totalLikeCount += task.getLikeCount();
+            }
+            if (task.getCommentCount() != null) {
+                totalCommentCount += task.getCommentCount();
+            }
+            if (task.getShareCount() != null) {
+                totalShareCount += task.getShareCount();
+            }
+            if (task.getFollowCount() != null) {
+                totalFollowCount += task.getFollowCount();
+            }
+        }
+        
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalOrders", tasks.size());
+        stats.put("cost", totalCost);
+        stats.put("playCount", totalPlayCount);
+        stats.put("likeCount", totalLikeCount);
+        stats.put("commentCount", totalCommentCount);
+        stats.put("shareCount", totalShareCount);
+        stats.put("fansCount", totalFollowCount);
+        
+        return stats;
     }
 
     /**

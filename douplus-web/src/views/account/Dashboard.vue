@@ -179,7 +179,7 @@ import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getAccountById } from '@/api/account'
-import { getTaskList } from '@/api/douplus'
+import { getTaskList, getAccountStats } from '@/api/douplus'
 import type { DouyinAccount, DouplusTask } from '@/api/types'
 import * as echarts from 'echarts'
 import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
@@ -203,15 +203,54 @@ const sortOption = ref<SortOption>({
   order: 'desc'
 })
 const orderList = ref<any[]>([])
+const allOrders = ref<any[]>([])  // 存储所有订单数据，用于前端排序
+
+// 前端排序函数
+const sortOrders = (data: any[], field: string, order: 'asc' | 'desc') => {
+  return [...data].sort((a, b) => {
+    let valA: number, valB: number
+    
+    switch (field) {
+      case 'actualCost':
+        valA = a.actualCost || 0
+        valB = b.actualCost || 0
+        break
+      case 'playCount':
+        valA = a.playCount || 0
+        valB = b.playCount || 0
+        break
+      case 'costPerPlay':
+        valA = (a.playCount > 0) ? (a.actualCost || 0) / a.playCount : 0
+        valB = (b.playCount > 0) ? (b.actualCost || 0) / b.playCount : 0
+        break
+      case 'shareRate':
+        valA = (a.playCount > 0) ? (a.shareCount || 0) / a.playCount : 0
+        valB = (b.playCount > 0) ? (b.shareCount || 0) / b.playCount : 0
+        break
+      case 'createTime':
+      default:
+        valA = new Date(a.createTimeRaw || 0).getTime()
+        valB = new Date(b.createTimeRaw || 0).getTime()
+        break
+    }
+    
+    return order === 'asc' ? valA - valB : valB - valA
+  })
+}
+
+// 应用前端排序
+const applyOrderSort = () => {
+  orderList.value = sortOrders(allOrders.value, sortOption.value.field, sortOption.value.order)
+}
 
 // 筛选条件变化
 const handleFilterChange = () => {
   loadOrders()
 }
 
-// 排序变化
+// 排序变化 - 前端排序，无需请求后端
 const handleSortChange = () => {
-  loadOrders()
+  applyOrderSort()
 }
 
 // 导出订单
@@ -330,18 +369,35 @@ const initChart = () => {
   window.addEventListener('resize', () => chart.resize())
 }
 
-// 加载订单列表
+// 加载订单统计数据
+const loadStats = async () => {
+  try {
+    const res = await getAccountStats(accountId)
+    if (res.code === 200 && res.data) {
+      statsData.cost = Number(res.data.cost || 0)
+      statsData.playCount = res.data.playCount || 0
+      statsData.likeCount = res.data.likeCount || 0
+      statsData.commentCount = res.data.commentCount || 0
+      statsData.shareCount = res.data.shareCount || 0
+      statsData.fansCount = res.data.fansCount || 0
+    }
+  } catch (error) {
+    console.error('加载统计数据失败', error)
+  }
+}
+
+// 加载订单列表 - 获取全部数据
 const loadOrders = async () => {
   ordersLoading.value = true
   try {
     const res = await getTaskList({
       accountId: accountId,
       pageNum: 1,
-      pageSize: 100
+      pageSize: -1  // 获取全部数据，排序在前端处理
     })
     if (res.code === 200) {
       // 转换订单数据格式，与History.vue统一
-      orderList.value = (res.data.records || []).map((task: DouplusTask) => ({
+      allOrders.value = (res.data.records || []).map((task: DouplusTask) => ({
         id: task.id,
         videoCover: task.videoCoverUrl,
         videoTitle: task.videoTitle || '视频标题',
@@ -351,14 +407,19 @@ const loadOrders = async () => {
         actualCost: task.actualCost || 0,
         budget: task.budget,
         actualExposure: task.actualExposure || 0,
-        playCount: task.actualExposure || 0,
-        shareCount: 0,
-        clickCount: 0,
-        componentClickCount: 0,
+        playCount: task.playCount || task.actualExposure || 0,
+        likeCount: task.likeCount || 0,
+        shareCount: task.shareCount || 0,
+        clickCount: task.clickCount || 0,
+        followCount: task.followCount || 0,
+        componentClickCount: task.clickCount || 0,
         play5sRate: 0,
         orderEndTime: task.orderEndTime ? formatDateTime(task.orderEndTime) : '-',
         createTime: formatDate(task.createTime),
+        createTimeRaw: task.createTime,  // 保留原始时间用于排序
       }))
+      // 应用前端排序
+      applyOrderSort()
     }
   } catch (error) {
     console.error('加载订单失败', error)
@@ -408,6 +469,8 @@ const handleNavClick = (key: string) => {
   activeNav.value = key
   if (key === 'orders') {
     loadOrders()
+  } else if (key === 'overview') {
+    loadStats()
   }
 }
 
@@ -428,6 +491,7 @@ const goBack = () => {
 
 onMounted(async () => {
   await loadAccount()
+  await loadStats()  // 加载统计数据
   await nextTick()
   initChart()
 })

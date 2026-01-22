@@ -1,56 +1,158 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="续费投放"
-    width="500px"
+    :title="dialogTitle"
+    width="560px"
     :close-on-click-modal="false"
     @close="handleClose"
   >
-    <div class="renew-content">
+    <div class="dialog-content">
       <!-- 订单信息摘要 -->
       <div class="order-summary">
-        <div class="summary-row">
-          <span class="label">视频：</span>
-          <span class="value">{{ task?.videoTitle || task?.itemId }}</span>
+        <div class="video-preview">
+          <el-image :src="task?.videoCoverUrl || task?.videoCover" class="video-cover" fit="cover">
+            <template #error>
+              <div class="video-placeholder">
+                <el-icon><VideoCamera /></el-icon>
+              </div>
+            </template>
+          </el-image>
+          <div class="video-info">
+            <div class="video-title">{{ task?.videoTitle || task?.itemId }}</div>
+            <div class="video-account">{{ task?.accountNickname || task?.awemeNick }}</div>
+          </div>
         </div>
-        <div class="summary-row">
-          <span class="label">账号：</span>
-          <span class="value">{{ task?.accountNickname }}</span>
-        </div>
-        <div class="summary-row">
-          <span class="label">单笔金额：</span>
-          <span class="value highlight">¥{{ task?.budget }}</span>
+        <div class="order-original">
+          <div class="info-item">
+            <span class="label">原投放金额：</span>
+            <span class="value">¥{{ task?.budget }}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">原投放时长：</span>
+            <span class="value">{{ task?.duration || 24 }}小时</span>
+          </div>
         </div>
       </div>
       
       <el-divider />
       
-      <!-- 续费设置 -->
-      <el-form :model="form" label-width="100px" class="renew-form">
+      <!-- 表单设置 -->
+      <el-form :model="form" label-width="100px" class="setting-form">
+        <!-- 投放金额 -->
+        <el-form-item label="投放金额">
+          <div class="option-group">
+            <div 
+              v-for="item in BUDGET_OPTIONS" 
+              :key="item.value"
+              :class="['option-btn', { active: form.budget === item.value || (item.value === 0 && customBudget) }]"
+              @click="selectBudget(item.value)"
+            >
+              {{ item.label }}
+            </div>
+          </div>
+          <el-input-number 
+            v-if="customBudget" 
+            v-model="form.budget" 
+            :min="100" 
+            :max="50000" 
+            :step="100"
+            style="width: 150px; margin-top: 10px;"
+          />
+        </el-form-item>
+        
+        <!-- 投放时长 -->
+        <el-form-item label="投放时长">
+          <div class="option-group">
+            <div 
+              v-for="item in DURATION_OPTIONS" 
+              :key="item.value"
+              :class="['option-btn', { active: !customDuration && form.duration === item.value || (item.value === 0 && customDuration) }]"
+              @click="selectDuration(item.value)"
+            >
+              {{ item.label }}
+            </div>
+          </div>
+          <div v-if="customDuration" class="custom-duration-row">
+            <el-input-number 
+              v-model="form.durationDays" 
+              :min="1" 
+              :max="7" 
+              style="width: 120px; margin-top: 10px;"
+              @change="onDurationDaysChange"
+            />
+            <span class="duration-unit">天</span>
+          </div>
+        </el-form-item>
+        
+        <!-- 自定义投放时段（仅再次下单模式且>=2天可用） -->
+        <el-form-item v-if="mode === 'reorder'" label="投放时段">
+          <div class="time-range-row">
+            <el-switch 
+              v-model="form.customTimeEnabled" 
+              :disabled="!canEnableCustomTime"
+            />
+            <span class="switch-label">{{ canEnableCustomTime ? '自定义投放时段' : '需2天以上才能设置' }}</span>
+          </div>
+          
+          <div v-if="form.customTimeEnabled && canEnableCustomTime" class="time-slot-setting">
+            <div class="time-slot-row">
+              <span class="row-label">每天</span>
+              <el-select v-model="form.fixedTimeStart" style="width: 80px;">
+                <el-option v-for="h in 24" :key="'s'+h" :value="h-1" :label="String(h-1).padStart(2,'0')+':00'" />
+              </el-select>
+              <span class="time-separator">~</span>
+              <el-select v-model="form.fixedTimeEnd" style="width: 80px;">
+                <el-option 
+                  v-for="h in 24" 
+                  :key="'e'+h" 
+                  :value="h" 
+                  :label="String(h).padStart(2,'0')+':00'"
+                  :disabled="h <= form.fixedTimeStart"
+                />
+              </el-select>
+              <span class="time-hint">投放</span>
+            </div>
+          </div>
+        </el-form-item>
+        
+        <!-- 投放笔数 -->
         <el-form-item label="投放笔数">
           <div class="count-input">
             <el-input-number 
               v-model="form.count" 
               :min="1" 
-              :max="10"
+              :max="100"
               controls-position="right"
             />
-            <span class="count-hint">笔（最多10笔）</span>
+            <span class="count-hint">笔（将创建{{ form.count }}笔相同订单）</span>
           </div>
         </el-form-item>
         
+        <!-- 投放密码 -->
         <el-form-item label="投放密码">
           <el-input
             v-model="form.investPassword"
             type="password"
             placeholder="请输入投放密码"
             show-password
+            style="width: 200px;"
           />
         </el-form-item>
         
-        <div class="total-info">
-          <span class="total-label">预计总投放金额：</span>
-          <span class="total-value">¥{{ totalAmount }}</span>
+        <!-- 费用预估 -->
+        <div class="cost-summary">
+          <div class="cost-row">
+            <span>单笔金额</span>
+            <span>¥{{ form.budget }}</span>
+          </div>
+          <div class="cost-row">
+            <span>投放笔数</span>
+            <span>× {{ form.count }}</span>
+          </div>
+          <div class="cost-row total">
+            <span>预计总金额</span>
+            <span class="total-value">¥{{ totalAmount }}</span>
+          </div>
         </div>
       </el-form>
     </div>
@@ -58,7 +160,7 @@
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
       <el-button type="primary" :loading="loading" @click="handleConfirm">
-        确认续费
+        {{ mode === 'renew' ? '确认续费' : '确认下单' }}
       </el-button>
     </template>
   </el-dialog>
@@ -66,6 +168,25 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { VideoCamera } from '@element-plus/icons-vue'
+
+// 预算选项
+const BUDGET_OPTIONS = [
+  { label: '¥100', value: 100 },
+  { label: '¥200', value: 200 },
+  { label: '¥500', value: 500 },
+  { label: '¥1000', value: 1000 },
+  { label: '自定义', value: 0 }
+]
+
+// 时长选项
+const DURATION_OPTIONS = [
+  { label: '6小时', value: 6 },
+  { label: '12小时', value: 12 },
+  { label: '24小时', value: 24 },
+  { label: '自定义', value: 0 }
+]
 
 // 订单任务接口
 interface OrderTask {
@@ -73,7 +194,10 @@ interface OrderTask {
   accountId?: number
   itemId?: string
   videoTitle?: string
+  videoCoverUrl?: string
+  videoCover?: string
   accountNickname?: string
+  awemeNick?: string
   budget?: number
   duration?: number
   objective?: string
@@ -86,19 +210,37 @@ interface OrderTask {
 const props = defineProps<{
   modelValue: boolean
   task: OrderTask | null
+  mode?: 'renew' | 'reorder'  // 续费 或 再次下单
 }>()
 
 // Emits
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'confirm', data: { task: OrderTask, count: number, investPassword: string }): void
+  (e: 'confirm', data: { 
+    task: OrderTask, 
+    budget: number,
+    duration: number,
+    count: number, 
+    investPassword: string,
+    customTimeEnabled?: boolean,
+    fixedTimeStart?: number,
+    fixedTimeEnd?: number
+  }): void
 }>()
 
 const loading = ref(false)
+const customBudget = ref(false)
+const customDuration = ref(false)
 
 const form = reactive({
+  budget: 100,
+  duration: 6,
+  durationDays: 2,
   count: 1,
-  investPassword: ''
+  investPassword: '',
+  customTimeEnabled: false,
+  fixedTimeStart: 8,
+  fixedTimeEnd: 22
 })
 
 // 计算属性 - 弹窗可见性
@@ -107,26 +249,83 @@ const visible = computed({
   set: (val) => emit('update:modelValue', val)
 })
 
+// 弹窗标题
+const dialogTitle = computed(() => {
+  return props.mode === 'renew' ? '续费投放' : '再次下单'
+})
+
 // 计算属性 - 总金额
 const totalAmount = computed(() => {
-  const budget = props.task?.budget || 0
-  return (budget * form.count).toFixed(2)
+  return (form.budget * form.count).toFixed(2)
+})
+
+// 是否可启用自定义时段
+const canEnableCustomTime = computed(() => {
+  return customDuration.value && form.durationDays >= 2
 })
 
 // 监听弹窗打开，重置表单
 watch(() => props.modelValue, (val) => {
-  if (val) {
+  if (val && props.task) {
+    // 使用原订单的预算和时长作为默认值
+    form.budget = props.task.budget || 100
+    form.duration = props.task.duration || 24
     form.count = 1
     form.investPassword = ''
+    form.customTimeEnabled = false
+    form.fixedTimeStart = 8
+    form.fixedTimeEnd = 22
+    
+    // 检查是否匹配预设选项
+    customBudget.value = !BUDGET_OPTIONS.some(o => o.value === form.budget && o.value !== 0)
+    
+    if (form.duration > 24) {
+      customDuration.value = true
+      form.durationDays = Math.ceil(form.duration / 24)
+    } else {
+      customDuration.value = !DURATION_OPTIONS.some(o => o.value === form.duration && o.value !== 0)
+    }
   }
 })
+
+// 选择预算
+const selectBudget = (value: number) => {
+  if (value === 0) {
+    customBudget.value = true
+    form.budget = 100
+  } else {
+    customBudget.value = false
+    form.budget = value
+  }
+}
+
+// 选择时长
+const selectDuration = (value: number) => {
+  if (value === 0) {
+    customDuration.value = true
+    form.durationDays = 2
+    form.duration = 48
+  } else {
+    customDuration.value = false
+    form.duration = value
+    form.customTimeEnabled = false
+  }
+}
+
+// 自定义天数变化
+const onDurationDaysChange = (days: number) => {
+  form.duration = days * 24
+  if (days < 2) {
+    form.customTimeEnabled = false
+  }
+}
 
 // 关闭弹窗
 const handleClose = () => {
   visible.value = false
 }
 
-// 确认续费
+// 确认
 const handleConfirm = () => {
   if (!props.task) return
   
@@ -137,8 +336,13 @@ const handleConfirm = () => {
   
   emit('confirm', {
     task: props.task,
+    budget: form.budget,
+    duration: form.duration,
     count: form.count,
-    investPassword: form.investPassword
+    investPassword: form.investPassword,
+    customTimeEnabled: form.customTimeEnabled,
+    fixedTimeStart: form.fixedTimeStart,
+    fixedTimeEnd: form.fixedTimeEnd
   })
 }
 
@@ -150,12 +354,8 @@ const setLoading = (val: boolean) => {
 defineExpose({ setLoading })
 </script>
 
-<script lang="ts">
-import { ElMessage } from 'element-plus'
-</script>
-
 <style scoped>
-.renew-content {
+.dialog-content {
   padding: 0 10px;
 }
 
@@ -165,33 +365,152 @@ import { ElMessage } from 'element-plus'
   padding: 16px;
 }
 
-.summary-row {
+.video-preview {
   display: flex;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.summary-row:last-child {
-  margin-bottom: 0;
-}
-
-.summary-row .label {
-  color: #666;
-  width: 80px;
+.video-cover {
+  width: 60px;
+  height: 80px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
-.summary-row .value {
-  color: #333;
-  flex: 1;
+.video-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e7eb;
+  color: #9ca3af;
+  font-size: 24px;
 }
 
-.summary-row .value.highlight {
+.video-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.video-title {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.video-account {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.order-original {
+  display: flex;
+  gap: 24px;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+}
+
+.info-item .label {
+  color: #666;
+  font-size: 13px;
+}
+
+.info-item .value {
   color: #ff6b35;
   font-weight: 600;
+  font-size: 14px;
 }
 
-.renew-form {
+.setting-form {
   margin-top: 16px;
+}
+
+.option-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.option-btn {
+  padding: 6px 14px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+}
+
+.option-btn:hover {
+  border-color: #1890ff;
+}
+
+.option-btn.active {
+  border-color: #1890ff;
+  color: #1890ff;
+  background: #e6f4ff;
+}
+
+.custom-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.duration-unit {
+  color: #666;
+  font-size: 13px;
+}
+
+.time-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.switch-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.time-slot-setting {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+.time-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.time-separator {
+  color: #999;
+}
+
+.time-hint {
+  font-size: 13px;
+  color: #666;
 }
 
 .count-input {
@@ -205,24 +524,34 @@ import { ElMessage } from 'element-plus'
   font-size: 13px;
 }
 
-.total-info {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 16px 0;
-  border-top: 1px dashed #e5e7eb;
+.cost-summary {
+  background: #fffbf0;
+  border: 1px solid #ffe7ba;
+  border-radius: 8px;
+  padding: 16px;
   margin-top: 16px;
 }
 
-.total-label {
-  color: #666;
+.cost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
   font-size: 14px;
+  color: #666;
+}
+
+.cost-row.total {
+  border-top: 1px dashed #e5e7eb;
+  margin-top: 8px;
+  padding-top: 12px;
+  font-weight: 500;
+  color: #333;
 }
 
 .total-value {
   color: #ff6b35;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
-  margin-left: 8px;
 }
 </style>

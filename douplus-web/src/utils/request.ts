@@ -83,4 +83,9 @@ export function postLong<T>(url: string, data?: any): Promise<ApiResponse<T>> {
   return request.post(url, data, { timeout: 300000 }) // 5分钟超时
 }
 
+// 封装 DELETE 请求
+export function del<T>(url: string): Promise<ApiResponse<T>> {
+  return request.delete(url)
+}
+
 export default request

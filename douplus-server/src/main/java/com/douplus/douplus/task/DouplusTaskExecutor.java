@@ -1,5 +1,6 @@
 package com.douplus.douplus.task;
 
+import com.douplus.account.domain.DouyinAccount;
 import com.douplus.account.service.DouyinAccountService;
 import com.douplus.douplus.client.DouyinAdClient;
 import com.douplus.douplus.domain.DouplusTask;
@@ -63,19 +64,33 @@ public class DouplusTaskExecutor {
         taskService.markRunning(task.getId());
         
         try {
-            // 2. 获取AccessToken
-            String accessToken = accountService.getDecryptedAccessToken(task.getAccountId());
+            // 2. 获取账号信息（包含AccessToken和aweme_sec_uid）
+            DouyinAccount account = accountService.getById(task.getAccountId());
+            if (account == null) {
+                throw new RuntimeException("账号不存在: " + task.getAccountId());
+            }
             
-            // 3. 构建请求
+            String accessToken = accountService.getDecryptedAccessToken(task.getAccountId());
+            String awemeSecUid = account.getAwemeSecUid();
+            
+            if (awemeSecUid == null || awemeSecUid.isEmpty()) {
+                throw new RuntimeException("账号缺少aweme_sec_uid，请重新授权: " + task.getAccountId());
+            }
+            
+            // 3. 构建请求（包含v3.0 API所需的所有参数）
             DouyinAdClient.CreateOrderRequest request = new DouyinAdClient.CreateOrderRequest();
             request.setItemId(task.getItemId());
             request.setBudget(task.getBudget());
             request.setDuration(task.getDuration());
             request.setTargetType(task.getTargetType());
             request.setTargetConfig(task.getTargetConfig());
+            // v3.0 API新增参数
+            request.setWantType(task.getWantType());
+            request.setObjective(task.getObjective());
+            request.setStrategy(task.getStrategy());
             
-            // 4. 调用抖音API创建订单
-            DouyinAdClient.CreateOrderResult result = adClient.createOrder(accessToken, request);
+            // 4. 调用抖音API创建订单（v3.0 API需要aweme_sec_uid）
+            DouyinAdClient.CreateOrderResult result = adClient.createOrder(accessToken, awemeSecUid, request);
             
             // 5. 更新任务状态为成功
             taskService.markSuccess(task.getId(), result.getOrderId(), result.getExpectedExposure());

@@ -9,6 +9,7 @@ import com.douplus.auth.security.SecurityUtils;
 import com.douplus.common.exception.BusinessException;
 import com.douplus.common.result.R;
 import com.douplus.common.result.ResultCode;
+import com.douplus.douplus.client.DouyinAdClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -31,6 +34,7 @@ public class DouyinAccountController {
 
     private final DouyinAccountService accountService;
     private final TokenRefreshTask tokenRefreshTask;
+    private final DouyinAdClient adClient;
 
     @Value("${douyin.api.app-id:}")
     private String appId;
@@ -166,6 +170,44 @@ public class DouyinAccountController {
         String oauthUrl = urlBuilder.toString();
         log.info("生成OAuth授权URL: {}", oauthUrl);
         return R.ok(oauthUrl);
+    }
+
+    /**
+     * 查询账号白名单能力
+     * 用于判断账户是否具有API创建订单的权限
+     */
+    @GetMapping("/{id}/whitelist")
+    public R<Map<String, Object>> checkWhitelist(@PathVariable Long id, 
+            @RequestParam(defaultValue = "douplus_api_create_order") String grayKey) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        DouyinAccount account = accountService.getByIdAndUserId(id, userId);
+        if (account == null) {
+            throw new BusinessException(ResultCode.ACCOUNT_NOT_FOUND);
+        }
+        
+        // 获取解密的AccessToken
+        String accessToken = accountService.getDecryptedAccessToken(id);
+        if (accessToken == null || accessToken.isEmpty()) {
+            throw new BusinessException("账号Token无效，请重新授权");
+        }
+        
+        String advertiserId = account.getAdvertiserId();
+        if (advertiserId == null || advertiserId.isEmpty()) {
+            throw new BusinessException("账号缺少广告主ID，请重新授权");
+        }
+        
+        // 调用白名单查询API
+        DouyinAdClient.WhitelistResult result = adClient.checkWhitelist(accessToken, advertiserId, grayKey);
+        
+        Map<String, Object> data = new HashMap<>();
+        data.put("grayKey", grayKey);
+        data.put("inWhitelist", result.isInWhitelist());
+        data.put("canCreateOrder", result.isInWhitelist());
+        if (result.getErrorMsg() != null) {
+            data.put("errorMsg", result.getErrorMsg());
+        }
+        
+        return R.ok(data);
     }
 
     // ======== 内部请求类 ========

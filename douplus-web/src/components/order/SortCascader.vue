@@ -8,9 +8,10 @@
     :show-arrow="false"
     :teleported="true"
     popper-class="sort-cascader-popover"
+    :popper-options="{ modifiers: [{ name: 'offset', options: { offset: [0, 4] } }] }"
   >
     <template #reference>
-      <div class="sort-trigger" @click="popoverVisible = !popoverVisible">
+      <div class="sort-trigger">
         <span class="sort-label">{{ currentSortLabel }}</span>
         <el-icon class="sort-arrow" :class="{ 'is-reverse': popoverVisible }">
           <ArrowUp />
@@ -74,9 +75,9 @@ const popoverVisible = ref(false)
 const sortFields = [
   { value: 'createTime', label: '按下单时间' },
   { value: 'actualCost', label: '按消耗' },
-  { value: 'playPer100', label: '按百播放量' },
-  { value: 'conversionCount', label: '按转化量' },
-  { value: 'conversionCost', label: '按转化成本' }
+  { value: 'playCount', label: '按百播放量' },
+  { value: 'costPerPlay', label: '按转化成本' },
+  { value: 'shareRate', label: '按百转发率' }
 ]
 
 // 排序方向选项
@@ -224,5 +225,18 @@ const emitChange = () => {
 .sort-order-item.active {
   color: #ff6b35;
   font-weight: 500;
+}
+</style>
+
+<!-- 全局样式用于popover（因为teleported到body） -->
+<style>
+.sort-cascader-popover {
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.sort-cascader-popover .el-popover__title {
+  display: none;
 }
 </style>

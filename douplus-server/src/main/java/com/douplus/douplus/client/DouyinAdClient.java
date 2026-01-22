@@ -35,49 +35,92 @@ public class DouyinAdClient {
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
-     * 创建DOU+投放订单
+     * 创建DOU+投放订单 (v3.0 API)
+     * API文档: https://open.oceanengine.com/labels/7
      */
-    public CreateOrderResult createOrder(String accessToken, CreateOrderRequest request) {
-        String url = baseUrl + "/dou+/order/create/"; // 示例路径，需根据实际API调整
+    public CreateOrderResult createOrder(String accessToken, String awemeSecUid, CreateOrderRequest request) {
+        String url = "https://api.oceanengine.com/open_api/v3.0/douplus/order/create/";
         
+        // 构建请求参数 (v3.0 API格式)
         Map<String, Object> params = new HashMap<>();
-        params.put("item_id", request.getItemId());
+        params.put("aweme_sec_uid", awemeSecUid);
         params.put("budget", request.getBudget().intValue() * 100); // 转为分
-        params.put("duration", request.getDuration());
-        params.put("target_type", request.getTargetType());
+        params.put("duration", request.getDuration() != null ? request.getDuration() : 24);
         
-        if (request.getTargetConfig() != null) {
-            params.put("target_config", request.getTargetConfig());
+        // 构建object_infos数组 - 包含投放对象信息
+        List<Map<String, Object>> objectInfos = new ArrayList<>();
+        Map<String, Object> objectInfo = new HashMap<>();
+        objectInfo.put("aweme_item_id", request.getItemId());
+        // marketing_goal: 营销目标
+        // - VIDEO_PROM_GOODS(视频带货) - 必须是电商视频
+        // - LIVE_PROM_GOODS(直播带货) - 必须是直播
+        // 注意: CONTENT_HEAT(内容加热)不被v3.0创建订单API支持，只能通过抖音APP创建
+        String marketingGoal = "VIDEO_PROM_GOODS"; // 默认视频带货
+        if ("LIVE".equals(request.getWantType()) || "LIVE_PROM_GOODS".equals(request.getWantType())) {
+            marketingGoal = "LIVE_PROM_GOODS";
+        }
+        objectInfo.put("marketing_goal", marketingGoal);
+        objectInfos.add(objectInfo);
+        params.put("object_infos", objectInfos);
+        
+        // 投放目标配置
+        if (request.getWantType() != null) {
+            params.put("want_type", request.getWantType());
+        }
+        if (request.getObjective() != null) {
+            params.put("objective", request.getObjective());
+        }
+        if (request.getStrategy() != null) {
+            params.put("strategy", request.getStrategy());
+        }
+        
+        // 定向配置
+        if (request.getTargetType() != null) {
+            params.put("audience_type", request.getTargetType()); // 1-系统智能，2-自定义
+        }
+        if (request.getTargetConfig() != null && !request.getTargetConfig().isEmpty()) {
+            try {
+                params.put("audience", JSON.parseObject(request.getTargetConfig()));
+            } catch (Exception e) {
+                log.warn("解析定向配置失败: {}", request.getTargetConfig());
+            }
         }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("access-token", accessToken);
+        headers.set("Access-Token", accessToken);
 
         try {
+            log.info("调用DOU+创建订单API(v3.0): aweme_sec_uid={}, item_id={}, budget={}", 
+                    awemeSecUid, request.getItemId(), request.getBudget());
+            log.debug("请求参数: {}", JSON.toJSONString(params));
+            
             HttpEntity<String> entity = new HttpEntity<>(JSON.toJSONString(params), headers);
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
             
+            log.info("DOU+创建订单API响应: {}", response.getBody());
             JSONObject json = JSON.parseObject(response.getBody());
             
-            // 检查返回结果
-            int errCode = json.getIntValue("err_no", -1);
+            // v3.0 API 返回格式: code, message, data
+            int errCode = json.getIntValue("code", -1);
             if (errCode != 0) {
-                String errMsg = json.getString("err_msg");
-                log.error("抖音API调用失败: code={}, msg={}", errCode, errMsg);
+                String errMsg = json.getString("message");
+                log.error("创建DOU+订单失败(v3.0): code={}, msg={}", errCode, errMsg);
                 throw new BusinessException(ResultCode.DOUPLUS_API_ERROR, errMsg);
             }
 
             JSONObject data = json.getJSONObject("data");
             CreateOrderResult result = new CreateOrderResult();
             result.setOrderId(data.getString("order_id"));
-            result.setExpectedExposure(data.getIntValue("expected_exposure", 0));
+            result.setExpectedExposure(data.getIntValue("expected_play_cnt", 0));
+            log.info("DOU+订单创建成功: orderId={}, expectedPlay={}", 
+                    result.getOrderId(), result.getExpectedExposure());
             return result;
             
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("调用抖音API异常", e);
+            log.error("调用DOU+创建订单API异常", e);
             throw new BusinessException(ResultCode.DOUPLUS_API_ERROR, "调用抖音API失败: " + e.getMessage());
         }
     }
@@ -152,6 +195,10 @@ public class DouyinAdClient {
         private Integer duration;
         private Integer targetType;
         private String targetConfig;
+        // v3.0 API新增字段
+        private String wantType;     // CONTENT_HEAT-内容加热
+        private String objective;    // LIKE_COMMENT-点赞评论量
+        private String strategy;     // GUARANTEE_PLAY-保证播放量
     }
 
     @Data
@@ -732,5 +779,93 @@ public class DouyinAdClient {
         private Integer shareCount;   // 转发量
         private Integer followCount;  // 新增粉丝
         private Integer clickCount;   // 组件点击
+    }
+
+    /**
+     * 查询白名单能力 (v3.0 API)
+     * 用于判断账户是否具有API创建订单的权限
+     * API: /open_api/v3.0/tools/gray/get/
+     * 方法: GET
+     * @param accessToken Access Token
+     * @param advertiserId 广告主ID
+     * @param grayKey 白名单能力key，如 "douplus_api_create_order"
+     * @return 白名单查询结果
+     */
+    public WhitelistResult checkWhitelist(String accessToken, String advertiserId, String grayKey) {
+        String url = "https://api.oceanengine.com/open_api/v3.0/tools/gray/get/";
+        
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Access-Token", accessToken);
+        
+        try {
+            log.info("查询白名单能力: advertiser_id={}, gray_key={}", advertiserId, grayKey);
+            
+            // gray_keys需要URL编码
+            String grayKeysJson = "[\"" + grayKey + "\"]";
+            String encodedGrayKeys = java.net.URLEncoder.encode(grayKeysJson, "UTF-8");
+            
+            String urlStr = url + "?advertiser_id=" + advertiserId + "&gray_keys=" + encodedGrayKeys;
+            
+            // 使用URI对象避免RestTemplate二次编码
+            java.net.URI uri = new java.net.URI(urlStr);
+            
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    uri, HttpMethod.GET, entity, String.class);
+            
+            log.info("白名单查询响应: {}", response.getBody());
+            JSONObject json = JSON.parseObject(response.getBody());
+            
+            int errCode = json.getIntValue("code", -1);
+            WhitelistResult result = new WhitelistResult();
+            result.setGrayKey(grayKey);
+            
+            if (errCode != 0) {
+                String errMsg = json.getString("message");
+                log.warn("查询白名单失败: code={}, msg={}", errCode, errMsg);
+                result.setInWhitelist(false);
+                result.setErrorMsg(errMsg);
+                return result;
+            }
+            
+            // 解析返回数据
+            JSONObject data = json.getJSONObject("data");
+            if (data != null && data.containsKey("data")) {
+                var dataArray = data.getJSONArray("data");
+                if (dataArray != null && !dataArray.isEmpty()) {
+                    JSONObject grayItem = dataArray.getJSONObject(0);
+                    int inWhitelist = grayItem.getIntValue("in_whitelist", 0);
+                    result.setInWhitelist(inWhitelist == 1);
+                    log.info("白名单查询结果: advertiser_id={}, gray_key={}, in_whitelist={}", 
+                            advertiserId, grayKey, result.isInWhitelist());
+                }
+            }
+            
+            return result;
+            
+        } catch (Exception e) {
+            log.error("查询白名单异常", e);
+            WhitelistResult result = new WhitelistResult();
+            result.setGrayKey(grayKey);
+            result.setInWhitelist(false);
+            result.setErrorMsg(e.getMessage());
+            return result;
+        }
+    }
+    
+    /**
+     * 检查账户是否有DOU+创建订单API权限
+     */
+    public boolean hasCreateOrderPermission(String accessToken, String advertiserId) {
+        // DOU+创建订单的白名单key（需要根据官方文档确认实际key值）
+        WhitelistResult result = checkWhitelist(accessToken, advertiserId, "douplus_api_create_order");
+        return result.isInWhitelist();
+    }
+
+    @Data
+    public static class WhitelistResult {
+        private String grayKey;
+        private boolean inWhitelist;
+        private String errorMsg;
     }
 }

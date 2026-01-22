@@ -39,7 +39,9 @@
         :show-renew-button="true"
         @view-details="viewDetails"
         @cancel="cancelTask"
+        @delete="deleteTask"
         @renew="handleRenew"
+        @reorder="handleReorder"
       />
       
       <el-pagination
@@ -95,12 +97,13 @@
       </div>
     </el-dialog>
     
-    <!-- 续费弹窗 -->
+    <!-- 续费/再次下单弹窗 -->
     <RenewDialog 
       v-model="renewVisible" 
       :task="renewTask" 
+      :mode="renewMode"
       ref="renewDialogRef"
-      @confirm="confirmRenew" 
+      @confirm="confirmRenewOrReorder" 
     />
     
     <!-- 同步进度弹窗 -->
@@ -154,7 +157,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import type { DouplusTaskVO } from '@/api/types'
-import { getTaskPage, cancelTask as cancelTaskApi, getTaskDetail, createTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
+import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, createTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 import { OrderTable, OrderFilters, SortCascader, RenewDialog } from '@/components/order'
 import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
@@ -167,11 +170,13 @@ interface Pagination {
 
 const loading = ref(false)
 const tasks = ref<any[]>([])
+const allTasks = ref<any[]>([])  // 存储所有数据，用于前端排序
 const detailVisible = ref(false)
 const currentTask = ref<DouplusTaskVO | null>(null)
 const members = ref<MemberOption[]>([])
 const renewVisible = ref(false)
 const renewTask = ref<any>(null)
+const renewMode = ref<'renew' | 'reorder'>('renew')
 const renewDialogRef = ref<any>(null)
 const syncing = ref(false)
 const syncMessage = ref('')
@@ -221,10 +226,54 @@ const handleFilterChange = () => {
   loadTasks()
 }
 
-// 排序变化
+// 前端排序函数
+const sortTasks = (data: any[], field: string, order: 'asc' | 'desc') => {
+  return [...data].sort((a, b) => {
+    let valA: number, valB: number
+    
+    switch (field) {
+      case 'actualCost':
+        valA = a.actualCost || 0
+        valB = b.actualCost || 0
+        break
+      case 'playCount':
+        valA = a.playCount || 0
+        valB = b.playCount || 0
+        break
+      case 'costPerPlay':
+        // 转化成本 = 消耗 / 播放量
+        valA = (a.playCount > 0) ? (a.actualCost || 0) / a.playCount : 0
+        valB = (b.playCount > 0) ? (b.actualCost || 0) / b.playCount : 0
+        break
+      case 'shareRate':
+        // 百转发率 = 转发数 / 播放量
+        valA = (a.playCount > 0) ? (a.shareCount || 0) / a.playCount : 0
+        valB = (b.playCount > 0) ? (b.shareCount || 0) / b.playCount : 0
+        break
+      case 'createTime':
+      default:
+        valA = new Date(a.createTimeRaw || a.createTime || 0).getTime()
+        valB = new Date(b.createTimeRaw || b.createTime || 0).getTime()
+        break
+    }
+    
+    return order === 'asc' ? valA - valB : valB - valA
+  })
+}
+
+// 应用排序和分页（前端处理）
+const applySort = () => {
+  const sorted = sortTasks(allTasks.value, sortOption.value.field, sortOption.value.order)
+  pagination.total = sorted.length
+  const start = (pagination.currentPage - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
+  tasks.value = sorted.slice(start, end)
+}
+
+// 排序变化 - 前端排序，无需请求后端
 const handleSortChange = () => {
   pagination.currentPage = 1
-  loadTasks()
+  applySort()
 }
 
 // 导出数据
@@ -232,19 +281,19 @@ const exportData = () => {
   ElMessage.info('导出功能开发中')
 }
 
-// 加载任务列表
+// 加载任务列表 - 一次性获取全部数据
 const loadTasks = async () => {
   loading.value = true
   try {
     const res = await getTaskPage({
-      pageNum: pagination.currentPage,
-      pageSize: pagination.pageSize,
+      pageNum: 1,
+      pageSize: -1,  // 获取全部数据
       status: filters.value.status
     })
     
     if (res.code === 200) {
       // 转换数据格式以匹配共享组件，保留所有原始数据用于指标计算
-      tasks.value = (res.data?.records || []).map((task: DouplusTaskVO) => ({
+      allTasks.value = (res.data?.records || []).map((task: DouplusTaskVO) => ({
         ...task,
         videoCover: task.videoCoverUrl,
         // 使用API返回的实际数据
@@ -255,8 +304,10 @@ const loadTasks = async () => {
         followCount: task.followCount || 0,
         componentClickCount: task.clickCount || 0,  // 组件点击量使用clickCount
         play5sRate: 0,  // API未返回此数据
+        createTimeRaw: task.createTime,  // 保留原始时间用于排序
       }))
-      pagination.total = res.data?.total || 0
+      // 应用前端排序和分页
+      applySort()
     }
   } catch (error) {
     console.error('加载任务失败', error)
@@ -265,17 +316,17 @@ const loadTasks = async () => {
   }
 }
 
-// 分页大小变化
+// 分页大小变化 - 前端分页
 const handleSizeChange = (size: number) => {
   pagination.pageSize = size
   pagination.currentPage = 1
-  loadTasks()
+  applySort()
 }
 
-// 当前页变化
+// 当前页变化 - 前端分页
 const handleCurrentChange = (page: number) => {
   pagination.currentPage = page
-  loadTasks()
+  applySort()
 }
 
 // 获取状态类型
@@ -339,23 +390,57 @@ const cancelTask = async (task: any) => {
   }
 }
 
+// 删除失败的任务
+const deleteTask = async (task: any) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除任务 ${task.id}？删除后无法恢复。`,
+      '删除任务',
+      { type: 'warning' }
+    )
+    
+    await deleteTaskApi(task.id)
+    ElMessage.success('任务已删除')
+    loadTasks() // 刷新列表
+  } catch (error) {
+    console.error('删除任务失败', error)
+  }
+}
+
 // 续费 - 打开弹窗
 const handleRenew = (task: any) => {
   renewTask.value = task
+  renewMode.value = 'renew'
   renewVisible.value = true
 }
 
-// 续费 - 确认提交
-const confirmRenew = async (data: { task: any, count: number, investPassword: string }) => {
+// 再次下单 - 打开弹窗
+const handleReorder = (task: any) => {
+  renewTask.value = task
+  renewMode.value = 'reorder'
+  renewVisible.value = true
+}
+
+// 续费/再次下单 - 确认提交
+const confirmRenewOrReorder = async (data: { 
+  task: any, 
+  budget: number,
+  duration: number,
+  count: number, 
+  investPassword: string,
+  customTimeEnabled?: boolean,
+  fixedTimeStart?: number,
+  fixedTimeEnd?: number
+}) => {
   try {
     renewDialogRef.value?.setLoading(true)
     
-    // 构建续费请求（复制原订单配置）
+    // 构建请求（复制原订单配置，使用新的预算和时长）
     const request = {
       accountId: data.task.accountId,
       itemId: data.task.itemId,
-      budget: data.task.budget,
-      duration: data.task.duration || 24,
+      budget: data.budget,
+      duration: data.duration,
       objective: data.task.objective || 'LIKE_COMMENT',
       strategy: data.task.strategy || 'GUARANTEE_PLAY',
       wantType: data.task.wantType || 'CONTENT_HEAT',
@@ -367,14 +452,15 @@ const confirmRenew = async (data: { task: any, count: number, investPassword: st
     const res = await createTask([request])
     
     if (res.code === 200) {
-      ElMessage.success(`续费成功，已创建 ${data.count} 个新任务`)
+      const actionText = renewMode.value === 'renew' ? '续费' : '下单'
+      ElMessage.success(`${actionText}成功，已创建 ${data.count} 个新任务`)
       renewVisible.value = false
       loadTasks() // 刷新列表
     } else {
-      ElMessage.error(res.message || '续费失败')
+      ElMessage.error(res.message || '操作失败')
     }
   } catch (error: any) {
-    ElMessage.error(error.message || '续费失败')
+    ElMessage.error(error.message || '操作失败')
   } finally {
     renewDialogRef.value?.setLoading(false)
   }

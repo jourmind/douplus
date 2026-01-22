@@ -1,4 +1,4 @@
-import { get, post, postLong } from '@/utils/request'
+import { get, post, postLong, del } from '@/utils/request'
 import type { DouplusTask, CreateTaskRequest } from './types'
 
 /**
@@ -22,6 +22,8 @@ export const getTaskPage = (params: {
   pageNum?: number
   pageSize?: number
   status?: string
+  sortField?: string
+  sortOrder?: string
 }) => {
   return get('/douplus/task/page', params)
 }
@@ -34,8 +36,17 @@ export const getTaskList = (params: {
   pageNum?: number
   pageSize?: number
   status?: string
+  sortField?: string
+  sortOrder?: string
 }) => {
   return get('/douplus/task/page', params)
+}
+
+/**
+ * 获取指定账号的订单统计数据
+ */
+export const getAccountStats = (accountId: number) => {
+  return get(`/douplus/task/stats/${accountId}`)
 }
 
 /**
@@ -43,6 +54,13 @@ export const getTaskList = (params: {
  */
 export const cancelTask = (id: number) => {
   return post(`/douplus/task/${id}/cancel`)
+}
+
+/**
+ * 删除投放任务（仅可删除失败状态的任务）
+ */
+export const deleteTask = (id: number) => {
+  return del(`/douplus/task/${id}`)
 }
 
 /**

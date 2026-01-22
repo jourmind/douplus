@@ -68,10 +68,23 @@ public class DouplusTaskController {
     public R<?> page(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false, defaultValue = "createTime") String sortField,
+            @RequestParam(required = false, defaultValue = "desc") String sortOrder) {
         Long userId = SecurityUtils.getCurrentUserId();
-        var result = taskService.pageByUserId(userId, pageNum, pageSize, status);
+        var result = taskService.pageByUserId(userId, pageNum, pageSize, status, accountId, sortField, sortOrder);
         return R.ok(result);
+    }
+
+    /**
+     * 获取指定账号的订单统计数据
+     */
+    @GetMapping("/stats/{accountId}")
+    public R<?> getAccountStats(@PathVariable Long accountId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        var stats = taskService.getAccountStats(userId, accountId);
+        return R.ok(stats);
     }
 
     /**
@@ -95,6 +108,24 @@ public class DouplusTaskController {
         Long userId = SecurityUtils.getCurrentUserId();
         taskService.cancelTask(userId, id);
         return R.ok(null, "任务已取消");
+    }
+
+    /**
+     * 删除投放任务（仅可删除失败状态的任务）
+     */
+    @DeleteMapping("/{id}")
+    public R<Void> deleteTask(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        com.douplus.douplus.domain.DouplusTask task = taskService.getById(id);
+        if (task == null || !task.getUserId().equals(userId)) {
+            throw new BusinessException("任务不存在");
+        }
+        if (!"FAIL".equals(task.getStatus())) {
+            throw new BusinessException("只能删除失败状态的任务");
+        }
+        taskService.removeById(id);
+        log.info("用户{}删除了失败任务: {}", userId, id);
+        return R.ok(null, "任务已删除");
     }
 
     /**

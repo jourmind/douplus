@@ -153,6 +153,49 @@
             </div>
           </div>
         </div>
+
+        <div class="info-section">
+          <h4 class="sub-title">
+            API能力
+            <el-tooltip content="白名单账号可通过API创建DOU+订单，非白名单账号需通过抖音APP下单">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </h4>
+          <div class="info-grid">
+            <div class="info-item full">
+              <span class="label">创建订单权限</span>
+              <span class="value" v-if="whitelistLoading">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                查询中...
+              </span>
+              <span class="value" v-else-if="!whitelistStatus.checked">
+                -
+              </span>
+              <span class="value success" v-else-if="whitelistStatus.inWhitelist">
+                <el-icon><CircleCheckFilled /></el-icon>
+                已开通（白名单）
+              </span>
+              <span class="value warning" v-else>
+                <el-icon><WarningFilled /></el-icon>
+                未开通
+                <el-tooltip v-if="whitelistStatus.errorMsg" :content="whitelistStatus.errorMsg">
+                  <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+            </div>
+          </div>
+          <div class="whitelist-tip" v-if="whitelistStatus.checked && !whitelistStatus.inWhitelist">
+            <el-alert 
+              type="info" 
+              :closable="false"
+              show-icon
+            >
+              <template #title>
+                此账号暂不支持API创建订单，需通过抖音APP手动下单。如需开通API权限，请联系巨量引擎销售申请白名单。
+              </template>
+            </el-alert>
+          </div>
+        </div>
       </div>
       <template #footer>
         <el-button @click="showDetailDialog = false">关闭</el-button>
@@ -192,7 +235,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAccountList, deleteAccount, getOAuthUrl, updateAccountRemark } from '@/api/account'
+import { getAccountList, deleteAccount, getOAuthUrl, updateAccountRemark, checkAccountWhitelist } from '@/api/account'
 import type { DouyinAccount } from '@/api/types'
 
 const router = useRouter()
@@ -211,6 +254,14 @@ const editingAccount = ref<DouyinAccount | null>(null)
 const remarkForm = reactive({
   remark: ''
 })
+
+// 白名单状态
+const whitelistLoading = ref(false)
+const whitelistStatus = ref<{
+  checked: boolean
+  inWhitelist: boolean
+  errorMsg?: string
+}>({ checked: false, inWhitelist: false })
 
 // 过滤后的账号列表
 const filteredAccounts = computed(() => {
@@ -301,9 +352,36 @@ const handleVisit = (row: DouyinAccount | null) => {
 }
 
 // 查看详情
-const handleViewDetail = (row: DouyinAccount) => {
+const handleViewDetail = async (row: DouyinAccount) => {
   currentAccount.value = row
   showDetailDialog.value = true
+  // 重置白名单状态
+  whitelistStatus.value = { checked: false, inWhitelist: false }
+  // 查询白名单状态
+  await checkWhitelistStatus(row.id)
+}
+
+// 查询白名单状态
+const checkWhitelistStatus = async (accountId: number) => {
+  whitelistLoading.value = true
+  try {
+    const res = await checkAccountWhitelist(accountId)
+    if (res.code === 200) {
+      whitelistStatus.value = {
+        checked: true,
+        inWhitelist: res.data.inWhitelist,
+        errorMsg: res.data.errorMsg
+      }
+    }
+  } catch (error: any) {
+    whitelistStatus.value = {
+      checked: true,
+      inWhitelist: false,
+      errorMsg: error.message || '查询失败'
+    }
+  } finally {
+    whitelistLoading.value = false
+  }
 }
 
 // 解绑
@@ -590,5 +668,23 @@ onMounted(() => {
   font-size: 12px;
   color: #999;
   margin-top: 4px;
+}
+
+.whitelist-tip {
+  margin-top: 12px;
+  
+  :deep(.el-alert__title) {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}
+
+.is-loading {
+  animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style>

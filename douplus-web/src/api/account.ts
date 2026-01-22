@@ -35,3 +35,17 @@ export function deleteAccount(id: number): Promise<ApiResponse<void>> {
 export function getOAuthUrl(): Promise<ApiResponse<string>> {
   return request.get('/account/oauth/url')
 }
+
+// 查询账号白名单能力
+export interface WhitelistResult {
+  grayKey: string
+  inWhitelist: boolean
+  canCreateOrder: boolean
+  errorMsg?: string
+}
+
+export function checkAccountWhitelist(id: number, grayKey?: string): Promise<ApiResponse<WhitelistResult>> {
+  return request.get(`/account/${id}/whitelist`, { 
+    params: grayKey ? { grayKey } : undefined 
+  })
+}

@@ -160,7 +160,7 @@
       </template>
     </el-table-column>
     
-    <el-table-column label="操作" width="140" fixed="right">
+    <el-table-column label="操作" width="160" fixed="right">
       <template #default="{ row }">
         <el-button 
           link
@@ -170,8 +170,9 @@
         >
           详情
         </el-button>
+        <!-- 投放中显示续费按钮 -->
         <el-button 
-          v-if="showRenewButton"
+          v-if="showRenewButton && isDelivering(row.status)"
           link
           type="warning"
           size="small" 
@@ -179,6 +180,17 @@
         >
           续费
         </el-button>
+        <!-- 已完成/已终止显示再次下单按钮 -->
+        <el-button 
+          v-if="showRenewButton && isFinishedOrTerminated(row.status)"
+          link
+          type="success"
+          size="small" 
+          @click="emit('reorder', row)"
+        >
+          再次下单
+        </el-button>
+        <!-- 待执行状态可取消 -->
         <el-button 
           v-if="showCancelButton && row.status === 'WAIT'"
           link
@@ -187,6 +199,16 @@
           @click="emit('cancel', row)"
         >
           取消
+        </el-button>
+        <!-- 失败状态可删除 -->
+        <el-button 
+          v-if="showCancelButton && row.status === 'FAIL'"
+          link
+          type="danger"
+          size="small" 
+          @click="emit('delete', row)"
+        >
+          删除
         </el-button>
       </template>
     </el-table-column>
@@ -235,8 +257,20 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'viewDetails', task: OrderTask): void
   (e: 'cancel', task: OrderTask): void
+  (e: 'delete', task: OrderTask): void
   (e: 'renew', task: OrderTask): void
+  (e: 'reorder', task: OrderTask): void
 }>()
+
+// 判断是否投放中（可续费）
+const isDelivering = (status?: string) => {
+  return status === 'DELIVERING' || status === 'RUNNING'
+}
+
+// 判断是否已完成或已终止（可再次下单）
+const isFinishedOrTerminated = (status?: string) => {
+  return ['DELIVERED', 'DELIVERIED', 'FINISHED', 'SUCCESS', 'TERMINATED', 'UNDELIVERIED'].includes(status || '')
+}
 
 // 统一的指标计算方法
 // 计算投放金额百分比（消耗/预算）
