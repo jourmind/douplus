@@ -1,0 +1,25 @@
+# 核心框架
+celery==5.3.4
+redis==5.0.1
+flask==3.0.0
+flask-cors==4.0.0
+PyJWT==2.8.0
+bcrypt==4.1.2
+
+# 数据库
+SQLAlchemy==2.0.23
+PyMySQL==1.1.0
+cryptography==41.0.7
+
+# HTTP客户端
+httpx==0.25.2
+
+# 数据验证
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# 日志
+loguru==0.7.2
+
+# 工具
+python-dotenv==1.0.0

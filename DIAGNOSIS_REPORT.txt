@@ -1,0 +1,124 @@
+========================================
+DOU+ 订单数据问题诊断报告
+========================================
+生成时间: 2026-01-26 12:15
+
+## 问题描述
+用户反馈: 转化成本、转化数、5S完播率这三个指标没有数据
+
+## 根本原因 ✓ 已找到
+
+### 1. API返回数据正常 ✓
+从日志可以看到,抖音API确实返回了这3个字段:
+```json
+{
+  "custom_convert_cost": 1667,     // 转化成本(分) ✓
+  "dp_target_convert_cnt": 6,      // 转化数 ✓  
+  "play_duration_5s_rank": 0.36    // 5秒完播率 ✓
+}
+```
+
+### 2. 代码解析正常 ✓
+DouyinAdClient.java 正确解析了这3个字段:
+- custom_convert_cost → customConvertCost (转为元)
+- dp_target_convert_cnt → dpTargetConvertCnt
+- play_duration_5s_rank → playDuration5sRank
+
+### 3. Service层更新逻辑有BUG ✗ (已修复)
+
+**旧代码**:
+```java
+if (stats.getPlayDuration5sRank() != null && stats.getPlayDuration5sRank() > 0) {
+    task.setPlayDuration5sRank(stats.getPlayDuration5sRank());
+}
+if (stats.getDpTargetConvertCnt() != null && stats.getDpTargetConvertCnt() > 0) {
+    task.setDpTargetConvertCnt(stats.getDpTargetConvertCnt());
+}
+if (stats.getCustomConvertCost() != null && stats.getCustomConvertCost().compareTo(BigDecimal.ZERO) > 0) {
+    task.setCustomConvertCost(stats.getCustomConvertCost());
+}
+```
+
+**问题**: 
+- 添加了 `> 0` 条件判断
+- 导致值为0的数据不会被保存到数据库
+- 例如: 某订单转化数为0时,这个0值不会被更新,数据库保持NULL或旧值
+
+**修复后**:
+```java
+if (stats.getPlayDuration5sRank() != null) {
+    task.setPlayDuration5sRank(stats.getPlayDuration5sRank());
+}
+if (stats.getDpTargetConvertCnt() != null) {
+    task.setDpTargetConvertCnt(stats.getDpTargetConvertCnt());
+}
+if (stats.getCustomConvertCost() != null) {
+    task.setCustomConvertCost(stats.getCustomConvertCost());
+}
+```
+
+### 4. 数据库现状 ✗
+
+查询结果:
+```
+总订单数:         1972条
+有5秒完播率:       494条 (25%)  ← 75%缺失!
+有转化数:         488条 (24.7%) ← 75%缺失!
+有转化成本:       485条 (24.6%) ← 75%缺失!
+有播放量:         494条 (25%)
+```
+
+**分析**:
+- 约75%的订单(1478条)的这3个字段为0或NULL
+- 这些订单是在旧版本代码(有>0条件)下同步的
+- 即使API返回了数据,也因为>0条件被过滤掉了
+
+## 解决方案 ✓
+
+### ✅ 已完成的修复:
+1. 移除Service层的 `> 0` 条件判断
+2. 重新编译并部署新版本代码 (PID: 1716550)
+3. 修改前端显示格式(点赞比、转发比改为百分比)
+
+### 🔄 待执行的操作:
+**需要重新同步历史订单数据**,让新代码重新处理:
+
+方法1: 前端手动同步(推荐)
+- 登录系统
+- 点击"同步历史订单"按钮
+- 等待同步完成(约1-2分钟)
+
+方法2: 等待自动同步
+- 系统每小时自动同步一次
+- 下次同步时间: 13:00左右
+- 会自动使用新代码更新所有订单
+
+方法3: API手动触发
+- 需要登录后获取token
+- POST /api/douyin/sync
+
+## 预期效果
+
+同步完成后:
+- 所有1972条订单的3个字段都会有正确的值
+- 即使值为0,也会显示为0,而不是空白
+- 前端订单列表中这3列将正常显示数据
+
+## 验证方法
+
+同步后执行以下SQL查询:
+```sql
+SELECT 
+    COUNT(*) as total,
+    COUNT(CASE WHEN play_duration_5s_rank > 0 THEN 1 END) as has_5s_rank,
+    COUNT(CASE WHEN dp_target_convert_cnt > 0 THEN 1 END) as has_convert,
+    COUNT(CASE WHEN custom_convert_cost > 0 THEN 1 END) as has_cost
+FROM douplus_task 
+WHERE order_id IS NOT NULL;
+```
+
+预期结果: has_5s_rank, has_convert, has_cost 的数量应该接近 total
+
+========================================
+报告结束
+========================================

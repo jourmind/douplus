@@ -45,8 +45,43 @@ export const getTaskList = (params: {
 /**
  * 获取指定账号的订单统计数据
  */
-export const getAccountStats = (accountId: number) => {
-  return get(`/douplus/task/stats/${accountId}`)
+export const getAccountStats = (accountId: number, params?: {
+  period?: 'today' | '7d' | '30d' | 'all'
+}) => {
+  return get(`/douplus/task/stats/${accountId}`, params)
+}
+
+/**
+ * 获取用户所有账号的汇总统计数据
+ */
+export const getAllAccountsStats = () => {
+  return get('/douplus/task/stats')
+}
+
+/**
+ * 获取指定账号下的视频维度统计列表
+ */
+export const getVideoStatsByAccount = (accountId: number, params?: {
+  period?: 'today' | '7d' | '30d' | 'all'
+  sortBy?: 'cost' | 'playCount' | 'likeCount' | 'shareCount' | 'convertCount' | 'playPer100Cost'
+  sortOrder?: 'asc' | 'desc'
+  pageNum?: number
+  pageSize?: number
+}) => {
+  return get(`/douplus/video/stats/${accountId}`, params)
+}
+
+/**
+ * 获取所有账号的视频维度统计列表（汇总）
+ */
+export const getAllVideoStats = (params?: {
+  period?: 'today' | '7d' | '30d' | 'all'
+  sortBy?: 'cost' | 'playCount' | 'likeCount' | 'shareCount' | 'convertCount' | 'playPer100Cost'
+  sortOrder?: 'asc' | 'desc'
+  pageNum?: number
+  pageSize?: number
+}) => {
+  return get('/douplus/video/stats/all', params)
 }
 
 /**

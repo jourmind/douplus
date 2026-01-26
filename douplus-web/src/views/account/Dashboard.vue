@@ -79,46 +79,70 @@
         <div class="card-header">
           <h3 class="card-title">数据总览</h3>
           <div class="card-actions">
-            <span class="period-label">当前周期</span>
-            <el-select v-model="dataPeriod" size="small" style="width: 100px;">
+            <span class="period-label">时间周期</span>
+            <el-select v-model="dataPeriod" size="small" style="width: 100px;" @change="handlePeriodChange">
+              <el-option label="今天" value="today" />
               <el-option label="近7天" value="7d" />
               <el-option label="近30天" value="30d" />
-              <el-option label="本月" value="month" />
+              <el-option label="全部" value="all" />
             </el-select>
           </div>
         </div>
         
         <div class="stats-cards">
           <div class="stat-card highlight">
-            <span class="stat-name">消耗</span>
-            <span class="stat-number">{{ statsData.cost }}</span>
+            <span class="stat-name">消耗(元)</span>
+            <span class="stat-number">{{ formatNumber(statsData.cost) }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-name">视频播放量</span>
-            <span class="stat-number">{{ statsData.playCount }}</span>
+            <span class="stat-number">{{ formatNumber(statsData.playCount) }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-name">视频点赞量</span>
-            <span class="stat-number">{{ statsData.likeCount }}</span>
+            <span class="stat-number">{{ formatNumber(statsData.likeCount) }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-name">视频评论量</span>
-            <span class="stat-number">{{ statsData.commentCount }}</span>
+            <span class="stat-number">{{ formatNumber(statsData.commentCount) }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-name">视频分享量</span>
-            <span class="stat-number">{{ statsData.shareCount }}</span>
+            <span class="stat-number">{{ formatNumber(statsData.shareCount) }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-name">粉丝量</span>
-            <span class="stat-number">{{ statsData.fansCount }}</span>
+            <span class="stat-number">{{ formatNumber(statsData.fansCount) }}</span>
           </div>
         </div>
         
-        <!-- 消耗图表 -->
-        <div class="chart-section">
-          <div class="chart-title">消耗(元)</div>
-          <div ref="chartRef" class="chart-container"></div>
+        <!-- 视频排行榜 -->
+        <div class="video-ranking">
+          <div class="ranking-header">
+            <h3 class="ranking-title">视频排行榜</h3>
+            <el-select v-model="rankingSort" size="small" style="width: 120px;" @change="loadVideoStats">
+              <el-option label="按消耗" value="cost" />
+              <el-option label="按播放量" value="playCount" />
+              <el-option label="按点赞数" value="likeCount" />
+              <el-option label="按转发数" value="shareCount" />
+            </el-select>
+          </div>
+          
+          <div v-loading="videoStatsLoading" class="ranking-list">
+            <div v-for="(video, index) in videoStats" :key="video.itemId" class="ranking-item">
+              <div class="ranking-number">{{ index + 1 }}</div>
+              <img :src="video.cover || '/default-cover.jpg'" class="video-cover" @error="handleImageError" />
+              <div class="video-info">
+                <div class="video-title">{{ video.title || '未知视频' }}</div>
+                <div class="video-stats">
+                  <span class="stat-item">消耗: ¥{{ video.totalCost }}</span>
+                  <span class="stat-item">播放: {{ formatNumber(video.totalPlay) }}</span>
+                  <span class="stat-item">点赞: {{ formatNumber(video.totalLike) }}</span>
+                </div>
+              </div>
+            </div>
+            <el-empty v-if="videoStats.length === 0 && !videoStatsLoading" description="暂无视频数据" />
+          </div>
         </div>
       </div>
     </div>
@@ -147,7 +171,7 @@
 
         <!-- 订单统计和排序 -->
         <div class="orders-toolbar">
-          <span class="orders-count">共 {{ orderList.length }} 个订单</span>
+          <span class="orders-count">共 {{ orderTotal }} 个订单（显示前 {{ orderList.length }} 条）</span>
           <SortCascader v-model="sortOption" @change="handleSortChange" />
         </div>
 
@@ -179,7 +203,7 @@ import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getAccountById } from '@/api/account'
-import { getTaskList, getAccountStats } from '@/api/douplus'
+import { getTaskList, getAccountStats, getVideoStatsByAccount } from '@/api/douplus'
 import type { DouyinAccount, DouplusTask } from '@/api/types'
 import * as echarts from 'echarts'
 import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
@@ -192,65 +216,46 @@ const accountId = Number(route.params.id)
 
 const account = ref<DouyinAccount | null>(null)
 const activeNav = ref('overview')
-const dataPeriod = ref('7d')
+const dataPeriod = ref('all')
 const chartRef = ref<HTMLElement | null>(null)
+
+// 视频排行榜相关
+const videoStats = ref<any[]>([])
+const videoStatsLoading = ref(false)
+const rankingSort = ref('cost')
 
 // 订单相关
 const ordersLoading = ref(false)
-const orderFilters = ref<OrderFiltersType>({})
+
+// 初始化默认时间范围为近30天
+const getDefaultDateRange = (): [string, string] => {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(start.getDate() - 29)
+  return [
+    start.toISOString().split('T')[0],
+    end.toISOString().split('T')[0]
+  ]
+}
+
+const orderFilters = ref<OrderFiltersType>({
+  dateRange: getDefaultDateRange()
+})
 const sortOption = ref<SortOption>({
   field: 'createTime',
   order: 'desc'
 })
 const orderList = ref<any[]>([])
-const allOrders = ref<any[]>([])  // 存储所有订单数据，用于前端排序
+const orderTotal = ref(0)  // 添加总数
 
-// 前端排序函数
-const sortOrders = (data: any[], field: string, order: 'asc' | 'desc') => {
-  return [...data].sort((a, b) => {
-    let valA: number, valB: number
-    
-    switch (field) {
-      case 'actualCost':
-        valA = a.actualCost || 0
-        valB = b.actualCost || 0
-        break
-      case 'playCount':
-        valA = a.playCount || 0
-        valB = b.playCount || 0
-        break
-      case 'costPerPlay':
-        valA = (a.playCount > 0) ? (a.actualCost || 0) / a.playCount : 0
-        valB = (b.playCount > 0) ? (b.actualCost || 0) / b.playCount : 0
-        break
-      case 'shareRate':
-        valA = (a.playCount > 0) ? (a.shareCount || 0) / a.playCount : 0
-        valB = (b.playCount > 0) ? (b.shareCount || 0) / b.playCount : 0
-        break
-      case 'createTime':
-      default:
-        valA = new Date(a.createTimeRaw || 0).getTime()
-        valB = new Date(b.createTimeRaw || 0).getTime()
-        break
-    }
-    
-    return order === 'asc' ? valA - valB : valB - valA
-  })
-}
-
-// 应用前端排序
-const applyOrderSort = () => {
-  orderList.value = sortOrders(allOrders.value, sortOption.value.field, sortOption.value.order)
-}
-
-// 筛选条件变化
+// 筛选条件变化 - 重新请求后端
 const handleFilterChange = () => {
   loadOrders()
 }
 
-// 排序变化 - 前端排序，无需请求后端
+// 排序变化 - 重新请求后端
 const handleSortChange = () => {
-  applyOrderSort()
+  loadOrders()
 }
 
 // 导出订单
@@ -372,7 +377,7 @@ const initChart = () => {
 // 加载订单统计数据
 const loadStats = async () => {
   try {
-    const res = await getAccountStats(accountId)
+    const res = await getAccountStats(accountId, { period: dataPeriod.value as any })
     if (res.code === 200 && res.data) {
       statsData.cost = Number(res.data.cost || 0)
       statsData.playCount = res.data.playCount || 0
@@ -386,18 +391,72 @@ const loadStats = async () => {
   }
 }
 
-// 加载订单列表 - 获取全部数据
+// 加载视频统计数据
+const loadVideoStats = async () => {
+  videoStatsLoading.value = true
+  try {
+    const res = await getVideoStatsByAccount(accountId, {
+      period: dataPeriod.value as any,
+      sortBy: rankingSort.value as any,
+      sortOrder: 'desc',
+      pageNum: 1,
+      pageSize: 10
+    })
+    if (res.code === 200 && res.data) {
+      videoStats.value = res.data.records || []
+    }
+  } catch (error) {
+    console.error('加载视频统计失败', error)
+  } finally {
+    videoStatsLoading.value = false
+  }
+}
+
+// 时间周期变化
+const handlePeriodChange = () => {
+  loadStats()
+  loadVideoStats()
+}
+
+// 图片加载错误处理
+const handleImageError = (e: Event) => {
+  const target = e.target as HTMLImageElement
+  target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iODAiIGZpbGw9IiNGNUY1RjUiLz48cGF0aCBkPSJNMzAgMzVINTBWNDVIMzBWMzVaIiBmaWxsPSIjQ0NDIi8+PC9zdmc+'
+}
+
+// 加载订单列表 - 使用后端分页和排序，支持时间筛选
 const loadOrders = async () => {
   ordersLoading.value = true
   try {
-    const res = await getTaskList({
+    const params: any = {
       accountId: accountId,
       pageNum: 1,
-      pageSize: -1  // 获取全部数据，排序在前端处理
-    })
+      pageSize: 50,  // 优化：首次只加载50条，提升响应速度
+      sortField: sortOption.value.field,
+      sortOrder: sortOption.value.order
+    }
+    
+    // 添加关键词搜索
+    if (orderFilters.value.keyword) {
+      params.keyword = orderFilters.value.keyword
+    }
+    
+    // 添加时间范围筛选
+    if (orderFilters.value.dateRange && orderFilters.value.dateRange.length === 2) {
+      params.startDate = orderFilters.value.dateRange[0]
+      params.endDate = orderFilters.value.dateRange[1]
+    }
+    
+    // 添加状态筛选
+    if (orderFilters.value.status) {
+      params.status = orderFilters.value.status
+    }
+    
+    const res = await getTaskList(params)
     if (res.code === 200) {
+      orderTotal.value = res.data.total || 0  // 保存总数
       // 转换订单数据格式，与History.vue统一
-      allOrders.value = (res.data.records || []).map((task: DouplusTask) => ({
+      orderList.value = (res.data.records || []).map((task: DouplusTask) => ({
         id: task.id,
         videoCover: task.videoCoverUrl,
         videoTitle: task.videoTitle || '视频标题',
@@ -413,13 +472,13 @@ const loadOrders = async () => {
         clickCount: task.clickCount || 0,
         followCount: task.followCount || 0,
         componentClickCount: task.clickCount || 0,
-        play5sRate: 0,
+        playDuration5sRank: task.avg5sRate || 0,
+        customConvertCost: task.avgConvertCost || 0,
+        dpTargetConvertCnt: task.dpTargetConvertCnt || 0,
         orderEndTime: task.orderEndTime ? formatDateTime(task.orderEndTime) : '-',
         createTime: formatDate(task.createTime),
         createTimeRaw: task.createTime,  // 保留原始时间用于排序
       }))
-      // 应用前端排序
-      applyOrderSort()
     }
   } catch (error) {
     console.error('加载订单失败', error)
@@ -471,6 +530,7 @@ const handleNavClick = (key: string) => {
     loadOrders()
   } else if (key === 'overview') {
     loadStats()
+    loadVideoStats()
   }
 }
 
@@ -491,9 +551,11 @@ const goBack = () => {
 
 onMounted(async () => {
   await loadAccount()
-  await loadStats()  // 加载统计数据
+  await loadStats()
+  await loadVideoStats()
+  // 预加载订单列表，避免切换标签时等待
+  loadOrders()
   await nextTick()
-  initChart()
 })
 </script>
 
@@ -802,6 +864,88 @@ onMounted(async () => {
     
     .chart-container {
       height: 250px;
+    }
+  }
+  
+  .video-ranking {
+    margin-top: 30px;
+    
+    .ranking-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      
+      .ranking-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+      }
+    }
+    
+    .ranking-list {
+      .ranking-item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px;
+        border: 1px solid #e8e8e8;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        transition: all 0.3s;
+        
+        &:hover {
+          background: #fafafa;
+          border-color: #ff6b35;
+        }
+        
+        .ranking-number {
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f5f5f5;
+          border-radius: 4px;
+          font-size: 16px;
+          font-weight: 600;
+          color: #666;
+          flex-shrink: 0;
+        }
+        
+        .video-cover {
+          width: 80px;
+          height: 80px;
+          object-fit: cover;
+          border-radius: 4px;
+          flex-shrink: 0;
+          background: #f5f5f5;
+        }
+        
+        .video-info {
+          flex: 1;
+          min-width: 0;
+          
+          .video-title {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          
+          .video-stats {
+            display: flex;
+            gap: 20px;
+            
+            .stat-item {
+              font-size: 12px;
+              color: #999;
+            }
+          }
+        }
+      }
     }
   }
 }

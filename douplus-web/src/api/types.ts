@@ -93,14 +93,27 @@ export interface DouplusTask {
   actualCost: number
   expectedExposure: number
   actualExposure: number
-  // 新增指标字段
+  // 基础指标字段
   playCount: number          // 播放量
   likeCount: number          // 点赞量
   commentCount: number       // 评论量
   shareCount: number         // 转发量
+  followCount: number        // 新增粉丝
   clickCount: number         // 点击量
-  componentClickCount: number // 组件点击量
-  play5sRate: number         // 5秒完播率
+  // 新增视频指标
+  playDuration5sRank: number // 5秒完播率
+  dyHomeVisited: number      // 主页访问次数
+  dpTargetConvertCnt: number // 转化数
+  customConvertCost: number  // 转化成本
+  // 直播相关指标
+  showCnt: number            // 直播间展示数
+  liveClickSourceCnt: number // 直播间新增观看次数
+  liveGiftUv: number         // 直播间打赏观看人数
+  liveGiftAmount: number     // 直播间音浪收入
+  liveCommentCnt: number     // 直播间评论次数
+  douplusLiveFollowCount: number // 直播间新增粉丝数
+  liveGiftCnt: number        // 直播间打赏次数
+  // 任务状态
   status: string
   statusText: string
   orderId: string

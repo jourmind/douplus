@@ -186,12 +186,23 @@ const syncCount = ref(0)
 const syncProgress = ref(0)
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
+// 初始化默认时间范围为近30天
+const getDefaultDateRange = (): [string, string] => {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(start.getDate() - 29)
+  return [
+    start.toISOString().split('T')[0],
+    end.toISOString().split('T')[0]
+  ]
+}
+
 const filters = ref<OrderFiltersType>({
   status: '',
   objective: '',
   keyword: '',
   memberId: undefined,
-  dateRange: undefined
+  dateRange: getDefaultDateRange()  // 设置默认时间范围
 })
 
 const sortOption = ref<SortOption>({
@@ -285,11 +296,30 @@ const exportData = () => {
 const loadTasks = async () => {
   loading.value = true
   try {
-    const res = await getTaskPage({
+    const params: any = {
       pageNum: 1,
       pageSize: -1,  // 获取全部数据
-      status: filters.value.status
-    })
+    }
+    
+    // 添加筛选条件
+    if (filters.value.status) {
+      params.status = filters.value.status
+    }
+    
+    if (filters.value.keyword) {
+      params.keyword = filters.value.keyword
+    }
+    
+    if (filters.value.memberId) {
+      params.accountId = filters.value.memberId
+    }
+    
+    if (filters.value.dateRange && filters.value.dateRange.length === 2) {
+      params.startDate = filters.value.dateRange[0]
+      params.endDate = filters.value.dateRange[1]
+    }
+    
+    const res = await getTaskPage(params)
     
     if (res.code === 200) {
       // 转换数据格式以匹配共享组件，保留所有原始数据用于指标计算
@@ -303,7 +333,9 @@ const loadTasks = async () => {
         likeCount: task.likeCount || 0,
         followCount: task.followCount || 0,
         componentClickCount: task.clickCount || 0,  // 组件点击量使用clickCount
-        play5sRate: 0,  // API未返回此数据
+        playDuration5sRank: task.avg5sRate || 0,  // 映射5S完播率
+        customConvertCost: task.avgConvertCost || 0,  // 映射转化成本
+        dpTargetConvertCnt: task.dpTargetConvertCnt || 0,  // 转化数
         createTimeRaw: task.createTime,  // 保留原始时间用于排序
       }))
       // 应用前端排序和分页

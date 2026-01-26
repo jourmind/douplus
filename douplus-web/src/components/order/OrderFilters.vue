@@ -67,7 +67,8 @@
         end-placeholder="结束日期"
         format="YYYY-MM-DD"
         value-format="YYYY-MM-DD"
-        style="width: 220px"
+        style="width: 280px"
+        :shortcuts="dateShortcuts"
         @change="emitChange"
       />
       <el-button @click="emit('export')">数据导出</el-button>
@@ -110,6 +111,54 @@ const emit = defineEmits<{
   (e: 'change', filters: OrderFiltersType): void
   (e: 'export'): void
 }>()
+
+// 日期快捷选项
+const dateShortcuts = [
+  {
+    text: '今天',
+    value: () => {
+      const today = new Date()
+      const todayStr = today.toISOString().split('T')[0]
+      return [todayStr, todayStr]
+    }
+  },
+  {
+    text: '近7天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 6)
+      return [
+        start.toISOString().split('T')[0],
+        end.toISOString().split('T')[0]
+      ]
+    }
+  },
+  {
+    text: '近30天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 29)
+      return [
+        start.toISOString().split('T')[0],
+        end.toISOString().split('T')[0]
+      ]
+    }
+  },
+  {
+    text: '近90天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 89)
+      return [
+        start.toISOString().split('T')[0],
+        end.toISOString().split('T')[0]
+      ]
+    }
+  }
+]
 
 // 本地筛选条件
 const localFilters = reactive<OrderFiltersType>({

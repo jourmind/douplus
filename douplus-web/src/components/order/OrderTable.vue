@@ -3,6 +3,7 @@
     :data="tasks" 
     v-loading="loading"
     style="width: 100%"
+    :max-height="600"
     :header-cell-style="{ background: '#fff', color: '#333', fontWeight: '500' }"
   >
     <el-table-column label="视频" min-width="280">
@@ -59,41 +60,71 @@
     </el-table-column>
     
     <!-- 百播放量：播放量/消耗*100 -->
-    <el-table-column width="120">
+    <el-table-column width="110">
       <template #header>
         <div class="header-with-tooltip">
-          <span>百播放量</span>
+          <span class="header-red">百播放量</span>
           <el-tooltip content="播放量 / 消耗 × 100" placement="top">
             <el-icon class="info-icon"><QuestionFilled /></el-icon>
           </el-tooltip>
         </div>
       </template>
       <template #default="{ row }">
-        <span class="metric-value">{{ calcPlayPer100(row) }}</span>
+        <span class="metric-value">{{ calcHundredPlayRate(row) }}</span>
       </template>
     </el-table-column>
     
-    <!-- 转化成本：消耗/组件点击量 -->
-    <el-table-column width="120">
+    <!-- 转化成本 -->
+    <el-table-column width="100">
       <template #header>
         <div class="header-with-tooltip">
-          <span>转化成本</span>
-          <el-tooltip content="消耗 / 组件点击量" placement="top">
+          <span class="header-red">转化成本</span>
+          <el-tooltip content="从API直接获取" placement="top">
             <el-icon class="info-icon"><QuestionFilled /></el-icon>
           </el-tooltip>
         </div>
       </template>
       <template #default="{ row }">
-        <span class="metric-value">{{ calcConversionCost(row) }}</span>
+        <span class="metric-value">{{ formatCurrency(row.customConvertCost) }}</span>
       </template>
     </el-table-column>
     
-    <!-- 百转发率：播放量/转发量*100 -->
-    <el-table-column width="120">
+    <!-- 百转发率：转发/播放量*100 -->
+    <el-table-column width="110">
       <template #header>
         <div class="header-with-tooltip">
-          <span>百转发率</span>
-          <el-tooltip content="播放量 / 转发量 × 100" placement="top">
+          <span class="header-red">百转发率</span>
+          <el-tooltip content="转发 / 播放量 × 100" placement="top">
+            <el-icon class="info-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <template #default="{ row }">
+        <span class="metric-value">{{ calcHundredShareRate(row) }}</span>
+      </template>
+    </el-table-column>
+    
+    <!-- 点赞比：点赞/播放量×100 -->
+    <el-table-column width="100">
+      <template #header>
+        <div class="header-with-tooltip">
+          <span class="header-red">点赞比</span>
+          <el-tooltip content="点赞 / 播放量 × 100" placement="top">
+            <el-icon class="info-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <template #default="{ row }">
+        <span class="metric-value">{{ calcLikeRate(row) }}</span>
+      </template>
+    </el-table-column>
+    
+    <!-- 转发比：转发/播放量×100 -->
+    <el-table-column width="100">
+      <template #header>
+        <div class="header-with-tooltip">
+          <span class="header-red">转发比</span>
+          <el-tooltip content="转发 / 播放量 × 100" placement="top">
             <el-icon class="info-icon"><QuestionFilled /></el-icon>
           </el-tooltip>
         </div>
@@ -103,58 +134,58 @@
       </template>
     </el-table-column>
     
-    <!-- 点赞转发比：转发量/点击量 -->
-    <el-table-column width="120">
-      <template #header>
-        <div class="header-with-tooltip">
-          <span>点赞转发比</span>
-          <el-tooltip content="转发量 / 点击量" placement="top">
-            <el-icon class="info-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      <template #default="{ row }">
-        <span class="metric-value">{{ calcLikeShareRatio(row) }}</span>
-      </template>
-    </el-table-column>
-    
-    <!-- 5S完播 -->
-    <el-table-column label="5S完播" width="80">
-      <template #default="{ row }">
-        <span class="metric-value">{{ row.play5sRate ? (row.play5sRate * 100).toFixed(1) + '%' : '-' }}</span>
-      </template>
-    </el-table-column>
-    
     <!-- 播放量 -->
-    <el-table-column label="播放量" width="90">
+    <el-table-column width="100">
+      <template #header>
+        <span class="header-red">播放量</span>
+      </template>
       <template #default="{ row }">
         <span class="metric-value">{{ formatNumber(row.playCount || row.actualExposure) }}</span>
       </template>
     </el-table-column>
     
     <!-- 点赞 -->
-    <el-table-column label="点赞" width="80">
+    <el-table-column width="90">
+      <template #header>
+        <span class="header-red">点赞</span>
+      </template>
       <template #default="{ row }">
         <span class="metric-value">{{ formatNumber(row.likeCount) }}</span>
       </template>
     </el-table-column>
     
     <!-- 转发 -->
-    <el-table-column label="转发" width="80">
+    <el-table-column width="90">
+      <template #header>
+        <span class="header-red">转发</span>
+      </template>
       <template #default="{ row }">
         <span class="metric-value">{{ formatNumber(row.shareCount) }}</span>
       </template>
     </el-table-column>
     
-    <!-- 点击 -->
-    <el-table-column label="点击" width="80">
+    <!-- 转化 -->
+    <el-table-column width="90">
+      <template #header>
+        <span class="header-red">转化</span>
+      </template>
       <template #default="{ row }">
-        <span class="metric-value">{{ formatNumber(row.clickCount) }}</span>
+        <span class="metric-value">{{ formatNumber(row.dpTargetConvertCnt) }}</span>
       </template>
     </el-table-column>
     
-    <!-- 订单结束时间 -->
-    <el-table-column label="订单结束时间" width="160">
+    <!-- 5S完播率 -->
+    <el-table-column width="100">
+      <template #header>
+        <span class="header-red">5S完播率</span>
+      </template>
+      <template #default="{ row }">
+        <span class="metric-value">{{ formatPercentage(row.playDuration5sRank) }}</span>
+      </template>
+    </el-table-column>
+    
+    <!-- 结束时间 -->
+    <el-table-column label="结束时间" width="160">
       <template #default="{ row }">
         <span class="time-text">{{ formatDate(row.completedTime || row.orderEndTime || row.scheduledTime) }}</span>
       </template>
@@ -222,9 +253,11 @@ import { VideoCamera, QuestionFilled } from '@element-plus/icons-vue'
 interface OrderTask {
   id: number
   videoCover?: string
+  videoCoverUrl?: string
   videoTitle?: string
   itemId?: string
   accountNickname?: string
+  awemeNick?: string
   status?: string
   actualCost?: number
   budget?: number
@@ -233,11 +266,25 @@ interface OrderTask {
   likeCount?: number
   shareCount?: number
   clickCount?: number
-  componentClickCount?: number
-  play5sRate?: number
+  followCount?: number
+  // 新增字段
+  playDuration5sRank?: number       // 5秒完播率
+  dyHomeVisited?: number            // 主页访问次数
+  dpTargetConvertCnt?: number       // 转化数
+  customConvertCost?: number        // 转化成本
+  // 直播相关
+  showCnt?: number
+  liveClickSourceCnt?: number
+  liveGiftUv?: number
+  liveGiftAmount?: number
+  liveCommentCnt?: number
+  douplusLiveFollowCount?: number
+  liveGiftCnt?: number
+  // 时间
   orderEndTime?: string
   completedTime?: string
   scheduledTime?: string
+  createTime?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -280,37 +327,48 @@ const calcBudgetPercent = (row: OrderTask) => {
   return Math.min(Math.round((cost / row.budget) * 100), 100)
 }
 
-// 计算百播放量（播放量/消耗*100）
-const calcPlayPer100 = (row: OrderTask) => {
+// 计算百播放量（播放量 / 消耗 × 100）
+const calcHundredPlayRate = (row: OrderTask) => {
   const cost = row.actualCost || 0
   const playCount = row.playCount || row.actualExposure || 0
   if (cost === 0) return '-'
-  return (playCount / cost * 100).toFixed(1)
+  return ((playCount / cost) * 100).toFixed(2)
 }
 
-// 计算转化成本（消耗/组件点击量）
-const calcConversionCost = (row: OrderTask) => {
-  const cost = row.actualCost || 0
-  // 使用clickCount字段（后端返回的组件点击量）
-  const clickCount = row.clickCount || row.componentClickCount || 0
-  if (clickCount === 0) return '-'
-  return (cost / clickCount).toFixed(2)
+// 计算百转发率（转发 / 播放量 × 100）
+const calcHundredShareRate = (row: OrderTask) => {
+  const playCount = row.playCount || row.actualExposure || 0
+  const shareCount = row.shareCount || 0
+  if (playCount === 0) return '-'
+  return ((shareCount / playCount) * 100).toFixed(2)
 }
 
-// 计算百转发率（播放量/转发量*100）
+// 计算点赞比（点赞 / 播放量 × 100）
+const calcLikeRate = (row: OrderTask) => {
+  const playCount = row.playCount || row.actualExposure || 0
+  const likeCount = row.likeCount || 0
+  if (playCount === 0) return '-'
+  return ((likeCount / playCount) * 100).toFixed(2) + '%'
+}
+
+// 计算转发比（转发 / 播放量 × 100）
 const calcShareRate = (row: OrderTask) => {
   const playCount = row.playCount || row.actualExposure || 0
   const shareCount = row.shareCount || 0
-  if (shareCount === 0) return '-'
-  return (playCount / shareCount * 100).toFixed(1)
+  if (playCount === 0) return '-'
+  return ((shareCount / playCount) * 100).toFixed(2) + '%'
 }
 
-// 计算点赞转发比（转发量/点击量）
-const calcLikeShareRatio = (row: OrderTask) => {
-  const shareCount = row.shareCount || 0
-  const clickCount = row.clickCount || 0
-  if (clickCount === 0) return '-'
-  return (shareCount / clickCount).toFixed(2)
+// 格式化货币
+const formatCurrency = (value?: number) => {
+  if (value === undefined || value === null || value === 0) return '-'
+  return '¥' + value.toFixed(2)
+}
+
+// 格式化百分比
+const formatPercentage = (value?: number) => {
+  if (value === undefined || value === null || value === 0) return '-'
+  return (value * 100).toFixed(2) + '%'
 }
 
 // 格式化数字（带千分位）
@@ -441,6 +499,12 @@ const getStatusText = (status?: string) => {
   font-size: 14px;
   color: #999;
   cursor: help;
+}
+
+/* 红色表头 */
+.header-red {
+  color: #ff4d4f;
+  font-weight: 500;
 }
 
 /* 投放金额列 */
