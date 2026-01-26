@@ -27,26 +27,12 @@
           <div class="account-basic">
             <div class="name-row">
               <span class="nickname">{{ account?.remark || account?.nickname || '未知账号' }}</span>
-              <el-tag type="danger" size="small">企业升级</el-tag>
-            </div>
-            <div class="stats-row">
-              <div class="stat-item">
-                <span class="stat-value">{{ formatNumber(account?.totalFavorited || 0) }}</span>
-                <span class="stat-label">获赞</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-value">{{ formatNumber(account?.followingCount || 0) }}</span>
-                <span class="stat-label">关注</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-value">{{ formatNumber(account?.fansCount || 0) }}</span>
-                <span class="stat-label">粉丝</span>
-              </div>
             </div>
           </div>
         </div>
         
-        <div class="wallet-section">
+        <!-- 注释：账户余额功能暂未从抖音API获取，需要后续对接广告主账户API -->
+        <!-- <div class="wallet-section">
           <div class="wallet-header">
             <span class="wallet-title">
               钱包 
@@ -62,13 +48,8 @@
               <span class="wallet-value">{{ account?.balance?.toFixed(2) || '0.00' }}</span>
               <span class="wallet-label">账户总余额（元）</span>
             </div>
-            <div class="wallet-divider"></div>
-            <div class="wallet-item">
-              <span class="wallet-value">{{ account?.couponCount || 0 }}</span>
-              <span class="wallet-label">优惠券（张）<a href="#" class="detail-link">查看详情</a></span>
-            </div>
           </div>
-        </div>
+        </div> -->
       </div>
     </div>
 

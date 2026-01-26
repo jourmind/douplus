@@ -246,47 +246,65 @@ def get_video_stats_by_account(account_id):
     
     db = SessionLocal()
     try:
-        # 查询最新stat_time
-        where_conditions = ["v.account_id = :account_id", "v.user_id = :user_id"]
+        # 时间筛选条件（基于订单创建时间）
+        time_filter = ""
         params = {'account_id': account_id, 'user_id': user_id, 'limit': page_size, 'offset': (page_num - 1) * page_size}
         
         if start_time:
-            where_conditions.append("v.stat_time >= :start_time")
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
-        where_clause = " AND ".join(where_conditions)
-        
-        latest_time_sql = text(f"SELECT MAX(stat_time) FROM douplus_video_stats_agg WHERE account_id = :account_id AND user_id = :user_id")
-        latest_time = db.execute(latest_time_sql, params).fetchone()[0]
-        
-        if not latest_time:
-            return paginated_response([], 0, page_num, page_size)
-        
         # 排序字段映射
-        sort_mapping = {'cost': 'v.total_cost', 'playCount': 'v.total_play', 'likeCount': 'v.total_like', 
-                       'commentCount': 'v.total_comment', 'shareCount': 'v.total_share', 'convertCount': 'v.total_convert'}
-        sort_column = sort_mapping.get(sort_by, 'v.total_cost')
+        sort_mapping = {'cost': 'total_cost', 'playCount': 'total_play', 'likeCount': 'total_like', 
+                       'commentCount': 'total_comment', 'shareCount': 'total_share', 'convertCount': 'total_convert'}
+        sort_column = sort_mapping.get(sort_by, 'total_cost')
         sort_dir = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        # 查询总数
-        count_sql = text(f"SELECT COUNT(DISTINCT v.item_id) FROM douplus_video_stats_agg v WHERE {where_clause} AND v.stat_time = :stat_time")
-        params['stat_time'] = latest_time
-        total = db.execute(count_sql, params).fetchone()[0]
-        
-        # 查询视频列表
+        # 修复：按订单创建时间筛选，从订单表聚合视频维度数据
+        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
         video_sql = text(f"""
-            SELECT v.item_id, MAX(o.aweme_title), MAX(o.aweme_cover), v.order_count, v.total_budget, v.total_cost,
-                   v.total_play, v.total_like, v.total_comment, v.total_share, v.total_follow, v.total_convert
-            FROM douplus_video_stats_agg v
-            LEFT JOIN douplus_order o ON v.item_id = o.item_id AND o.deleted = 0
-            WHERE {where_clause} AND v.stat_time = :stat_time
-            GROUP BY v.item_id, v.order_count, v.total_budget, v.total_cost, v.total_play, v.total_like, 
-                     v.total_comment, v.total_share, v.total_follow, v.total_convert
+            SELECT 
+                o.item_id,
+                MAX(o.aweme_title) as title,
+                MAX(o.aweme_cover) as cover,
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(o.budget) as total_budget,
+                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
+                SUM(COALESCE(s.total_play, 0)) as total_play,
+                SUM(COALESCE(s.custom_like, 0)) as total_like,
+                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
+                SUM(COALESCE(s.dy_share, 0)) as total_share,
+                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
+                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert
+            FROM douplus_order o
+            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+            LEFT JOIN (
+                SELECT order_id, MAX(stat_time) as max_time
+                FROM douplus_order_stats
+                GROUP BY order_id
+            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+            WHERE o.account_id = :account_id 
+              AND o.user_id = :user_id 
+              AND o.deleted = 0
+              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+              {time_filter}
+            GROUP BY o.item_id
             ORDER BY {sort_column} {sort_dir}
             LIMIT :limit OFFSET :offset
         """)
         
         results = db.execute(video_sql, params).fetchall()
+        
+        # 查询总数
+        count_sql = text(f"""
+            SELECT COUNT(DISTINCT o.item_id) 
+            FROM douplus_order o 
+            WHERE o.account_id = :account_id 
+              AND o.user_id = :user_id 
+              AND o.deleted = 0
+              {time_filter}
+        """)
+        total = db.execute(count_sql, params).fetchone()[0]
         
         records = [{'itemId': r[0], 'title': r[1] or '未知视频', 'cover': r[2] or '', 'orderCount': r[3] or 0,
                    'totalBudget': float(r[4]) if r[4] else 0, 'totalCost': float(r[5]) if r[5] else 0,
@@ -308,9 +326,19 @@ def get_video_stats_by_account(account_id):
 @query_bp.route('/video/stats/all', methods=['GET'])
 @require_auth
 def get_all_video_stats():
-    """获取所有账号的视频维度统计列表"""
+    """
+    获取所有账号的视频维度统计列表（支持时间维度 + 账号筛选）
+    
+    参数：
+    - period: 时间周期
+    - accountId: 筛选指定抖音账号的数据（可选）
+    - sortBy/sortOrder/pageNum/pageSize: 排序和分页
+    
+    修复：按订单创建时间筛选，从原始订单表聚合
+    """
     user_id = request.user_id
     period = request.args.get('period', 'all')
+    account_id = request.args.get('accountId')  # 新增：账号筛选参数
     sort_by = request.args.get('sortBy', 'cost')
     sort_order = request.args.get('sortOrder', 'desc')
     page_num = int(request.args.get('pageNum', 1))
@@ -320,40 +348,67 @@ def get_all_video_stats():
     
     db = SessionLocal()
     try:
+        # 筛选条件
+        time_filter = ""
+        account_filter = ""
         params = {'user_id': user_id, 'limit': page_size, 'offset': (page_num - 1) * page_size}
-        where_clause = "v.user_id = :user_id"
+        
+        # 如果指定了accountId，则筛选该账号的数据
+        if account_id:
+            account_filter = "AND o.account_id = :account_id"
+            params['account_id'] = int(account_id)
         
         if start_time:
-            where_clause += " AND v.stat_time >= :start_time"
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
-        latest_time_sql = text(f"SELECT MAX(stat_time) FROM douplus_video_stats_agg WHERE user_id = :user_id")
-        latest_time = db.execute(latest_time_sql, params).fetchone()[0]
-        
-        if not latest_time:
-            return paginated_response([], 0, page_num, page_size)
-        
-        sort_mapping = {'cost': 'v.total_cost', 'playCount': 'v.total_play', 'likeCount': 'v.total_like', 
-                       'shareCount': 'v.total_share', 'convertCount': 'v.total_convert'}
-        sort_column = sort_mapping.get(sort_by, 'v.total_cost')
+        # 排序字段映射
+        sort_mapping = {'cost': 'total_cost', 'playCount': 'total_play', 'likeCount': 'total_like', 
+                       'shareCount': 'total_share', 'convertCount': 'total_convert'}
+        sort_column = sort_mapping.get(sort_by, 'total_cost')
         sort_dir = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        count_sql = text(f"SELECT COUNT(DISTINCT v.item_id) FROM douplus_video_stats_agg v WHERE {where_clause} AND v.stat_time = :stat_time")
-        params['stat_time'] = latest_time
-        total = db.execute(count_sql, params).fetchone()[0]
-        
+        # 从订单表聚合视频维度数据
         video_sql = text(f"""
-            SELECT v.item_id, MAX(o.aweme_title), MAX(o.aweme_cover), v.order_count, v.total_cost,
-                   v.total_play, v.total_like, v.total_comment, v.total_share
-            FROM douplus_video_stats_agg v
-            LEFT JOIN douplus_order o ON v.item_id = o.item_id AND o.deleted = 0
-            WHERE {where_clause} AND v.stat_time = :stat_time
-            GROUP BY v.item_id, v.order_count, v.total_cost, v.total_play, v.total_like, v.total_comment, v.total_share
+            SELECT 
+                o.item_id,
+                MAX(o.aweme_title) as title,
+                MAX(o.aweme_cover) as cover,
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
+                SUM(COALESCE(s.total_play, 0)) as total_play,
+                SUM(COALESCE(s.custom_like, 0)) as total_like,
+                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
+                SUM(COALESCE(s.dy_share, 0)) as total_share
+            FROM douplus_order o
+            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+            LEFT JOIN (
+                SELECT order_id, MAX(stat_time) as max_time
+                FROM douplus_order_stats
+                GROUP BY order_id
+            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+            WHERE o.user_id = :user_id 
+              AND o.deleted = 0
+              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+              {account_filter}
+              {time_filter}
+            GROUP BY o.item_id
             ORDER BY {sort_column} {sort_dir}
             LIMIT :limit OFFSET :offset
         """)
         
         results = db.execute(video_sql, params).fetchall()
+        
+        # 查询总数
+        count_sql = text(f"""
+            SELECT COUNT(DISTINCT o.item_id) 
+            FROM douplus_order o 
+            WHERE o.user_id = :user_id 
+              AND o.deleted = 0
+              {account_filter}
+              {time_filter}
+        """)
+        total = db.execute(count_sql, params).fetchone()[0]
         
         records = [{'itemId': r[0], 'title': r[1] or '未知视频', 'cover': r[2] or '', 'orderCount': r[3] or 0,
                    'totalCost': float(r[4]) if r[4] else 0, 'totalPlay': int(r[5]) if r[5] else 0,

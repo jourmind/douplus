@@ -54,6 +54,8 @@ def get_account_stats(account_id):
     - period: today/7d/30d/all（默认all）
     
     返回：总消耗、总播放、总点赞等统计数据
+    
+    修复逻辑：按订单创建时间筛选，从原始订单表和效果表汇总
     """
     user_id = request.user_id
     period = request.args.get('period', 'all')
@@ -61,47 +63,44 @@ def get_account_stats(account_id):
     
     db = SessionLocal()
     try:
-        # 构建查询条件
-        where_conditions = ["account_id = :account_id", "user_id = :user_id"]
+        # 构建时间筛选条件
+        time_filter = ""
         params = {'account_id': account_id, 'user_id': user_id}
         
         if start_time:
-            where_conditions.append("stat_time >= :start_time")
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
-        where_clause = " AND ".join(where_conditions)
-        
-        # 查询最新的stat_time
-        latest_time_sql = text(f"""
-            SELECT MAX(stat_time) 
-            FROM douplus_video_stats_agg
-            WHERE {where_clause}
-        """)
-        
-        latest_time_result = db.execute(latest_time_sql, params).fetchone()
-        latest_time = latest_time_result[0] if latest_time_result and latest_time_result[0] else None
-        
-        if not latest_time:
-            return success_response({
-                'cost': 0, 'playCount': 0, 'likeCount': 0, 'commentCount': 0,
-                'shareCount': 0, 'fansCount': 0, 'convertCount': 0,
-                'videoCount': 0, 'orderCount': 0
-            })
-        
-        # 从预聚合表查询该账号的统计
+        # 从原始订单表和效果表查询（按订单创建时间筛选）
+        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
         stats_sql = text(f"""
             SELECT 
-                SUM(total_cost), SUM(total_play), SUM(total_like), SUM(total_comment),
-                SUM(total_share), SUM(total_follow), SUM(total_convert),
-                COUNT(DISTINCT item_id), SUM(order_count)
-            FROM douplus_video_stats_agg
-            WHERE {where_clause} AND stat_time = :stat_time
+                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
+                SUM(COALESCE(s.total_play, 0)) as total_play,
+                SUM(COALESCE(s.custom_like, 0)) as total_like,
+                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
+                SUM(COALESCE(s.dy_share, 0)) as total_share,
+                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
+                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert,
+                COUNT(DISTINCT o.item_id) as video_count,
+                COUNT(DISTINCT o.id) as order_count
+            FROM douplus_order o
+            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+            LEFT JOIN (
+                SELECT order_id, MAX(stat_time) as max_time
+                FROM douplus_order_stats
+                GROUP BY order_id
+            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+            WHERE o.account_id = :account_id 
+              AND o.user_id = :user_id 
+              AND o.deleted = 0
+              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+              {time_filter}
         """)
         
-        params['stat_time'] = latest_time
         result = db.execute(stats_sql, params).fetchone()
         
-        if result:
+        if result and result[0] is not None:
             return success_response({
                 'cost': float(result[0]) if result[0] else 0,
                 'playCount': int(result[1]) if result[1] else 0,
@@ -131,57 +130,67 @@ def get_account_stats(account_id):
 @require_auth
 def get_all_accounts_stats():
     """
-    获取用户所有账号的汇总统计（支持时间维度）
+    获取用户所有账号的汇总统计（支持时间维度 + 账号筛选）
     
     参数：
     - period: today/7d/30d/all（默认all）
+    - accountId: 筛选指定抖音账号的数据（可选）
     
-    返回：所有账号加总的统计数据
+    返回：所有账号（或指定账号）加总的统计数据
+    
+    修复：按订单创建时间筛选，从原始订单表汇总
     """
     user_id = request.user_id
     period = request.args.get('period', 'all')
+    account_id = request.args.get('accountId')  # 新增：账号筛选参数
     start_time = parse_time_period(period)
     
     db = SessionLocal()
     try:
-        # 查询最新的stat_time
+        # 构建筛选条件
+        time_filter = ""
+        account_filter = ""
         params = {'user_id': user_id}
-        time_filter = "AND stat_time >= :start_time" if start_time else ""
+        
+        # 如果指定了accountId，则筛选该账号的数据
+        if account_id:
+            account_filter = "AND o.account_id = :account_id"
+            params['account_id'] = int(account_id)
+        
         if start_time:
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
-        latest_time_sql = text(f"""
-            SELECT MAX(stat_time) 
-            FROM douplus_video_stats_agg
-            WHERE user_id = :user_id {time_filter}
-        """)
-        
-        latest_time_result = db.execute(latest_time_sql, params).fetchone()
-        latest_time = latest_time_result[0] if latest_time_result and latest_time_result[0] else None
-        
-        if not latest_time:
-            return success_response({
-                'cost': 0, 'playCount': 0, 'likeCount': 0, 'commentCount': 0,
-                'shareCount': 0, 'fansCount': 0, 'convertCount': 0,
-                'videoCount': 0, 'orderCount': 0
-            })
-        
-        # 从预聚合表查询用户所有账号的统计（汇总）
-        stats_sql = text("""
+        # 从原始订单表和效果表查询（按订单创建时间筛选）
+        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
+        stats_sql = text(f"""
             SELECT 
-                SUM(total_cost), SUM(total_play), SUM(total_like), SUM(total_comment),
-                SUM(total_share), SUM(total_follow), SUM(total_convert),
-                COUNT(DISTINCT item_id), SUM(order_count)
-            FROM douplus_video_stats_agg
-            WHERE user_id = :user_id AND stat_time = :stat_time
+                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
+                SUM(COALESCE(s.total_play, 0)) as total_play,
+                SUM(COALESCE(s.custom_like, 0)) as total_like,
+                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
+                SUM(COALESCE(s.dy_share, 0)) as total_share,
+                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
+                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert,
+                COUNT(DISTINCT o.item_id) as video_count,
+                COUNT(DISTINCT o.id) as order_count
+            FROM douplus_order o
+            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+            LEFT JOIN (
+                SELECT order_id, MAX(stat_time) as max_time
+                FROM douplus_order_stats
+                GROUP BY order_id
+            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+            WHERE o.user_id = :user_id 
+              AND o.deleted = 0
+              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+              {account_filter}
+              {time_filter}
         """)
         
-        result = db.execute(stats_sql, {
-            'user_id': user_id,
-            'stat_time': latest_time
-        }).fetchone()
+        result = db.execute(stats_sql, params).fetchone()
         
-        if result:
+        if result and result[0] is not None:
             return success_response({
                 'cost': float(result[0]) if result[0] else 0,
                 'playCount': int(result[1]) if result[1] else 0,

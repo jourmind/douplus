@@ -92,6 +92,18 @@ export const cancelTask = (id: number) => {
 }
 
 /**
+ * 续费DOU+订单（追加预算和时长）
+ */
+export const renewTask = (data: {
+  orderId: number
+  budget: number
+  duration: number
+  investPassword: string
+}) => {
+  return post('/douplus/task/renew', data)
+}
+
+/**
  * 删除投放任务（仅可删除失败状态的任务）
  */
 export const deleteTask = (id: number) => {

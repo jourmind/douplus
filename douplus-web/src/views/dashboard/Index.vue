@@ -1,14 +1,36 @@
 <template>
   <div class="dashboard">
-    <!-- 时间筛选 -->
+    <!-- 筛选栏 -->
     <div class="filter-bar">
-      <div class="filter-label">时间周期：</div>
-      <el-radio-group v-model="period" size="default" @change="handlePeriodChange">
-        <el-radio-button label="today">今天</el-radio-button>
-        <el-radio-button label="7d">近7天</el-radio-button>
-        <el-radio-button label="30d">近30天</el-radio-button>
-        <el-radio-button label="all">全部</el-radio-button>
-      </el-radio-group>
+      <div class="filter-item">
+        <div class="filter-label">时间周期：</div>
+        <el-radio-group v-model="period" size="default" @change="handlePeriodChange">
+          <el-radio-button label="today">今天</el-radio-button>
+          <el-radio-button label="7d">近7天</el-radio-button>
+          <el-radio-button label="30d">近30天</el-radio-button>
+          <el-radio-button label="all">全部</el-radio-button>
+        </el-radio-group>
+      </div>
+      
+      <div class="filter-item">
+        <div class="filter-label">用户筛选：</div>
+        <el-select 
+          v-model="filterAccountId" 
+          placeholder="请选择账号" 
+          clearable
+          size="default"
+          style="width: 200px;"
+          @change="handleAccountChange"
+        >
+          <el-option label="全部账号" :value="null" />
+          <el-option 
+            v-for="account in accountList" 
+            :key="account.id" 
+            :label="account.nickname || account.douyinId" 
+            :value="account.id" 
+          />
+        </el-select>
+      </div>
     </div>
     
     <!-- 统计卡片 -->
@@ -128,10 +150,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getAllAccountsStats, getAllVideoStats } from '@/api/douplus'
+import { getAccountList } from '@/api/account'
 
 const period = ref('all')
+const filterAccountId = ref<number | null>(null)
 const rankingSort = ref('cost')
 const videoLoading = ref(false)
+const accountList = ref<any[]>([])
 
 const stats = ref({
   totalCost: 0,
@@ -144,10 +169,27 @@ const stats = ref({
 
 const videoRank = ref<any[]>([])
 
+// 加载账号列表
+const loadAccounts = async () => {
+  try {
+    const res = await getAccountList()
+    if (res.code === 200 && res.data) {
+      accountList.value = res.data
+    }
+  } catch (error) {
+    console.error('加载账号列表失败', error)
+  }
+}
+
 // 加载统计数据
 const loadStats = async () => {
   try {
-    const res = await getAllAccountsStats({ period: period.value as any })
+    const params: any = { period: period.value }
+    if (filterAccountId.value) {
+      params.accountId = filterAccountId.value
+    }
+    
+    const res = await getAllAccountsStats(params)
     if (res.code === 200 && res.data) {
       stats.value = {
         totalCost: res.data.cost || 0,
@@ -167,13 +209,19 @@ const loadStats = async () => {
 const loadAllVideoStats = async () => {
   videoLoading.value = true
   try {
-    const res = await getAllVideoStats({
-      period: period.value as any,
-      sortBy: rankingSort.value as any,
+    const params: any = {
+      period: period.value,
+      sortBy: rankingSort.value,
       sortOrder: 'desc',
       pageNum: 1,
       pageSize: 10
-    })
+    }
+    
+    if (filterAccountId.value) {
+      params.accountId = filterAccountId.value
+    }
+    
+    const res = await getAllVideoStats(params)
     if (res.code === 200 && res.data) {
       videoRank.value = res.data.records || []
     }
@@ -186,6 +234,12 @@ const loadAllVideoStats = async () => {
 
 // 时间周期变化
 const handlePeriodChange = () => {
+  loadStats()
+  loadAllVideoStats()
+}
+
+// 账号筛选变化
+const handleAccountChange = () => {
   loadStats()
   loadAllVideoStats()
 }
@@ -205,6 +259,7 @@ const formatNumber = (num: number) => {
 }
 
 onMounted(() => {
+  loadAccounts()
   loadStats()
   loadAllVideoStats()
 })
@@ -218,15 +273,23 @@ onMounted(() => {
 .filter-bar {
   display: flex;
   align-items: center;
+  gap: 32px;
   margin-bottom: 20px;
   padding: 16px 20px;
   background: #fff;
   border-radius: 8px;
+  flex-wrap: wrap;
+  
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
   
   .filter-label {
     font-size: 14px;
     color: #666;
-    margin-right: 16px;
+    white-space: nowrap;
   }
 }
 

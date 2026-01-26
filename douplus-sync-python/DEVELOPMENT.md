@@ -19,29 +19,24 @@
 
 ### 系统简介
 
-DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同步与数据分析平台。
+DOU+ 订单管理系统是一个基于**Python Flask + Celery架构**的订单同步与数据分析平台。
 
 **架构分层**:
 - **前端**: Vue 3 + TypeScript + Element Plus
-- **查询服务**: Java Spring Boot 3.2 (授权、订单列表查询)
-- **同步服务**: Python + Celery (订单同步、效果数据同步、视频聚合)
+- **后端API**: Python Flask (授权、查询、统计、同步)
+- **任务调度**: Python Celery (订单同步、效果数据同步、视频聚合)
 - **数据库**: MySQL 5.7
 - **消息队列**: Redis
 
-### 技术决策
+### 技术优势
 
-#### 为什么使用Python重构同步服务?
-
-| 对比项 | Java方案 | Python方案 | 选择理由 |
-|--------|---------|-----------|---------|
-| 开发效率 | 2周 | 1周 | ✅ 开发快 |
-| 团队熟悉度 | 低 | 高 | ✅ 易维护 |
-| 代码量 | ~1000行 | ~600行 | ✅ 代码简洁 |
-| 部署复杂度 | 中 | 低 | ✅ 部署简单 |
-| 资源占用 | 中(JVM) | 低 | ✅ 省资源 |
-| 任务调度 | @Scheduled | Celery | ✅ 更强大 |
-
-**最终决策**: 采用**Java + Python混合架构**,Java保留授权和查询,Python负责数据同步。
+| 特性 | 说明 |
+|------|------|
+| 开发效率 | Python简洁语法，代码量少50% |
+| 部署简单 | 单一技术栈，无需JVM |
+| 任务调度 | Celery强大的分布式任务支持 |
+| 资源占用 | 内存占用低，适合小型服务器 |
+| 可维护性 | 代码结构清晰，易于维护 |
 
 ---
 
@@ -54,17 +49,19 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
 │         前端 (Vue 3)                     │
 │  - 订单列表展示                          │
 │  - 账号管理                              │
+│  - 数据可视化                            │
 └─────────────────┬───────────────────────┘
                   │ HTTPS
                   ↓
 ┌─────────────────────────────────────────┐
-│   Java Spring Boot (查询层)              │
+│   Python Flask (API服务)                 │
 │  - OAuth授权模块                         │
-│  - 订单列表查询接口                       │
-│  - 账号管理接口                          │
+│  - 查询层API (订单列表、视频排行)        │
+│  - 统计层API (账号统计、数据汇总)        │
+│  - 同步层API (触发同步、查询状态)        │
 └─────────────────┬───────────────────────┘
                   │
-                  │ 读取
+                  │ 读写
                   ↓
 ┌─────────────────────────────────────────┐
 │          MySQL 数据库                    │
@@ -77,7 +74,7 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
                   │ 写入
                   │
 ┌─────────────────────────────────────────┐
-│   Python Celery (同步层)                 │
+│   Python Celery (任务调度)               │
 │  - 订单同步Worker                        │
 │  - 效果数据同步Worker                    │
 │  - 视频聚合Worker                        │
@@ -93,68 +90,111 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
 ### 三层架构设计
 
 #### 1. 同步层 (Sync Layer)
-**职责**: 只负责从抖音API获取原始数据并存储,不做任何计算
+**职责**: 只负责从抖音API获取原始数据并存储，不做任何计算
 
-- **订单同步**: `order_sync.py`
+- **订单同步**: `app/tasks/order_sync.py`
   - 全量同步: 最近90天所有订单
   - 增量同步: 最近7天有更新的订单
+  - 存储表: `douplus_order`
   - 频率: 每5分钟
 
-- **效果数据同步**: `stats_sync.py`
+- **效果数据同步**: `app/tasks/stats_sync.py`
   - 同步订单效果数据(播放、点赞、转发等)
-  - 按时间窗口存储(5分钟粒度)
+  - 按订单ID + 时间窗口存储
+  - 存储表: `douplus_order_stats`
   - 频率: 每5分钟(延迟1分钟)
 
 #### 2. 统计层 (Aggregation Layer)
 **职责**: 将原始数据按视频维度预先聚合计算
 
-- **视频聚合**: `video_agg.py` (待实现)
+- **视频聚合**: `app/tasks/video_agg.py`
   - 按item_id聚合多订单数据
   - 预计算百播放量、点赞比、转发比等指标
+  - 存储表: `douplus_video_stats_agg`
   - 频率: 每5分钟(延迟2分钟)
+  - **注意**: 这是全量汇总表，stat_time只是聚合批次时间
 
 #### 3. 查询层 (Query Layer)
-**职责**: 提供高性能查询接口,不做实时计算
+**职责**: 提供高性能查询接口，不做实时计算
 
-- **订单列表**: ⚠️ **重要**: 查询`douplus_order_stats`表(订单维度),响应时间 < 200ms
-- **视频排行**: 查询`douplus_video_stats_agg`表(视频维度)
-- **订单详情**: 查询基础表 + 效果明细表
-- **账号管理**: 账号CRUD操作
+**API接口规范**:
 
-**数据表使用规范**:
+| 接口 | 数据表 | 维度 | 时间筛选字段 | 说明 |
+|------|--------|------|-------------|------|
+| `/api/douplus/task/page` | `douplus_order` + `douplus_order_stats` | order_id | `order_create_time` | 订单列表（响应 < 200ms） |
+| `/api/douplus/task/stats/:id` | `douplus_order` + `douplus_order_stats` | account_id | `order_create_time` | 单账号统计 |
+| `/api/douplus/task/stats` | `douplus_order` + `douplus_order_stats` | user_id | `order_create_time` | 全部账号统计 |
+| `/api/douplus/video/stats/:id` | `douplus_order` + `douplus_order_stats` | account_id + item_id | `order_create_time` | 单账号视频排行 |
+| `/api/douplus/video/stats/all` | `douplus_order` + `douplus_order_stats` | item_id | `order_create_time` | 全部账号视频排行 |
 
-| 查询场景 | 使用表 | 维度 | 说明 |
-|---------|-------|------|------|
-| 订单列表 | `douplus_order_stats` | order_id | 每个订单独立数据 |
-| 视频排行 | `douplus_video_stats_agg` | item_id | 视频汇总数据 |
-| 账号统计 | `douplus_video_stats_agg` | account_id | 账号汇总数据 |
+### ⚠️ 时间周期筛选的正确实现
 
-⚠️ **常见错误**: 订单列表接口禁止使用视频预聚合表,会导致同一视频的多个订单显示相同数据
+**核心原则**: period筛选必须基于**订单创建时间(order_create_time)**，而不是聚合批次时间(stat_time)
+
+#### 错误实现（已废弃）
+
+```python
+# ❌ 错误：使用预聚合表的stat_time筛选
+SELECT * FROM douplus_video_stats_agg 
+WHERE stat_time >= :start_time
+```
+
+**问题**:
+- `douplus_video_stats_agg`是全量汇总表
+- `stat_time`是聚合批次时间（每5分钟一次），不代表订单创建时间
+- 导致所有period（今天/近7天/近30天/全部）返回相同数据
+
+#### 正确实现（已修复）
+
+```python
+# ✅ 正确：从原始订单表按order_create_time筛选
+time_filter = ""
+if start_time:
+    time_filter = "AND o.order_create_time >= :start_time"
+
+SELECT SUM(s.stat_cost), SUM(s.total_play), ...
+FROM douplus_order o
+LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+LEFT JOIN (
+    SELECT order_id, MAX(stat_time) as max_time
+    FROM douplus_order_stats 
+    GROUP BY order_id
+) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+WHERE o.deleted = 0 
+  AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+  {time_filter}
+```
+
+**为什么这样做**:
+1. 从`douplus_order`表筛选订单（按`order_create_time`）
+2. JOIN最新的效果数据（避免重复计算）
+3. MySQL 5.7兼容（使用子查询代替窗口函数）
+
+#### 适用场景
+
+所有支持period参数的API都必须使用这种实现：
+- `/api/douplus/task/stats/:id?period=today|7d|30d|all`
+- `/api/douplus/task/stats?period=today|7d|30d|all`
+- `/api/douplus/video/stats/:id?period=today|7d|30d|all`
+- `/api/douplus/video/stats/all?period=today|7d|30d|all`
 
 ---
 
 ## 技术栈
 
-### Python同步服务
+### 后端服务
 
 | 组件 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| 核心框架 | Celery | 5.3.4 | 分布式任务队列 |
+| Web框架 | Flask | 3.0.0 | 轻量级Web框架 |
+| 任务队列 | Celery | 5.3.4 | 分布式任务队列 |
 | 消息队列 | Redis | 5.0.1 | Celery Broker |
 | 数据库ORM | SQLAlchemy | 2.0.23 | ORM框架 |
 | MySQL驱动 | PyMySQL | 1.1.0 | MySQL连接器 |
 | HTTP客户端 | httpx | 0.25.2 | 异步HTTP |
 | 数据验证 | Pydantic | 2.5.2 | 配置管理 |
 | 日志 | loguru | 0.7.2 | 日志库 |
-
-### Java查询服务
-
-| 组件 | 技术 | 版本 |
-|------|------|------|
-| 框架 | Spring Boot | 3.2 |
-| ORM | MyBatis Plus | 3.5.5 |
-| 数据库 | MySQL | 5.7 |
-| JDK | OpenJDK | 17 |
+| JWT | PyJWT | 2.8.0 | 身份认证 |
 
 ---
 
@@ -200,16 +240,16 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
 
 ### API模块化架构说明 ⭐
 
-从v2.0.0开始,API服务采用**三层解耦架构**,将原1581行的`api_server.py`拆分为多个职责清晰的模块:
+API服务采用**三层解耦架构**，职责清晰、易于维护：
 
-#### 📊 重构前后对比
+#### 📊 架构特点
 
-| 项目 | v1.x (单文件) | v2.0 (模块化) | 改善 |
-|------|--------------|--------------|------|
-| api_server.py | 1,581行 | 148行 | **-90.6%** |
-| 代码组织 | 单文件混合 | 模块化分层 | ✅ |
-| 可维护性 | 低 | 高 | ✅ |
-| 测试难度 | 高 | 低 | ✅ |
+| 特性 | 说明 |
+|------|------|
+| 代码行数 | api_server.py仅148行（蓝图注册） |
+| 模块化 | 按职责拆分为4个独立模块 |
+| 可维护性 | 高内聚低耦合，修改影响面小 |
+| 测试友好 | 可独立测试每一层 |
 
 #### 🏗️ 模块职责划分
 
@@ -217,13 +257,14 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
 - 触发订单同步(全量/增量)
 - 查询同步状态
 - DOU+平台回调接收
-- **原则**: 只负责任务提交,不做业务计算
+- **原则**: 只负责任务提交，不做业务计算
 
 **2. app/api/stats_api.py (统计层)**  
 - 账号维度统计(单个/全部)
 - 视频维度统计
 - 支持多时间周期(today/7d/30d/all)
-- **原则**: 从预聚合表查询,无JOIN
+- **原则**: 基于order_create_time筛选，JOIN最新效果数据
+- **实现**: MySQL 5.7兼容的SQL（使用子查询代替窗口函数）
 
 **3. app/api/query_api.py (查询层)**
 - 订单列表分页查询
@@ -232,17 +273,24 @@ DOU+ 订单管理系统是一个基于**Java + Python混合架构**的订单同�
 - **原则**: 响应时间<200ms
 - **数据源规范**:
   - 订单列表: 使用 `douplus_order_stats` (订单维度)
-  - 视频排行: 使用 `douplus_video_stats_agg` (视频维度)
+  - 视频排行: 从 `douplus_order` 按 `item_id` GROUP BY
 
 **4. app/api/account_api.py (账号管理)**
 - 账号列表/详情查询
+- OAuth授权处理
 - 纯CRUD操作
 - **原则**: 无业务逻辑耦合
 
-**5. app/api/common.py (通用工具)**
+**5. app/api/order_api.py (订单操作)**
+- 订单续费
+- 业务规则验证
+- **原则**: 轻量级业务逻辑
+
+**6. app/api/common.py (通用工具)**
 - JWT认证装饰器 `@require_auth`
 - 统一响应格式 `success_response()` / `error_response()`
 - 分页响应 `paginated_response()`
+- 时间周期解析 `parse_time_period()`
 
 #### 🎯 架构优势
 

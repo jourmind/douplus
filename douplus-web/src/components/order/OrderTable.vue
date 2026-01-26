@@ -501,9 +501,9 @@ const getStatusText = (status?: string) => {
   cursor: help;
 }
 
-/* 红色表头 */
+/* 表头样式（原header-red改为黑色） */
 .header-red {
-  color: #ff4d4f;
+  color: #333;
   font-weight: 500;
 }
 

@@ -157,7 +157,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import type { DouplusTaskVO } from '@/api/types'
-import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, createTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
+import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 import { OrderTable, OrderFilters, SortCascader, RenewDialog } from '@/components/order'
 import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
@@ -467,29 +467,26 @@ const confirmRenewOrReorder = async (data: {
   try {
     renewDialogRef.value?.setLoading(true)
     
-    // 构建请求（复制原订单配置，使用新的预算和时长）
-    const request = {
-      accountId: data.task.accountId,
-      itemId: data.task.itemId,
-      budget: data.budget,
-      duration: data.duration,
-      objective: data.task.objective || 'LIKE_COMMENT',
-      strategy: data.task.strategy || 'GUARANTEE_PLAY',
-      wantType: data.task.wantType || 'CONTENT_HEAT',
-      targetConfig: data.task.targetConfig,
-      count: data.count,
-      investPassword: data.investPassword
-    }
-    
-    const res = await createTask([request])
-    
-    if (res.code === 200) {
-      const actionText = renewMode.value === 'renew' ? '续费' : '下单'
-      ElMessage.success(`${actionText}成功，已创建 ${data.count} 个新任务`)
-      renewVisible.value = false
-      loadTasks() // 刷新列表
+    if (renewMode.value === 'renew') {
+      // 续费模式：调用续费API
+      const res = await renewTask({
+        orderId: data.task.id,
+        budget: data.budget,
+        duration: data.duration,
+        investPassword: data.investPassword
+      })
+      
+      if (res.code === 200) {
+        ElMessage.success(res.message || '续费成功')
+        renewVisible.value = false
+        loadTasks() // 刷新列表
+      } else {
+        ElMessage.error(res.message || '续费失败')
+      }
     } else {
-      ElMessage.error(res.message || '操作失败')
+      // 再次下单模式：暂不支持（需要创建订单API）
+      ElMessage.warning('再次下单功能开发中，请通过抖音APP下单')
+      renewVisible.value = false
     }
   } catch (error: any) {
     ElMessage.error(error.message || '操作失败')

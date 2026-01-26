@@ -164,6 +164,48 @@ class DouyinClient:
         logger.info(f"获取到{len(result)}条效果数据")
         return result
     
+    def renew_order(
+        self,
+        aweme_sec_uid: str,
+        task_id: str,
+        renewal_budget: int,
+        renewal_delivery_hour: float
+    ) -> Dict[str, Any]:
+        """
+        续费DOU+订单（追加预算和时长）
+        
+        Args:
+            aweme_sec_uid: 抖音号ID
+            task_id: 订单ID（PC端订单号）
+            renewal_budget: 追加投放预算（单位：分，需为10的倍数，范围10,000-500,000,000）
+            renewal_delivery_hour: 延长投放时长（小时，支持0、2、6、12、24或12的倍数，最大720）
+        
+        Returns:
+            API响应数据
+        
+        注意：
+        - 不可以仅增加投放时长（renewal_budget必须>0）
+        - 可以仅增加投放预算（renewal_delivery_hour可以为0）
+        """
+        endpoint = "/douplus/order/renew/"
+        
+        json_data = {
+            "aweme_sec_uid": aweme_sec_uid,
+            "task_id": int(task_id),
+            "renewal_budget": renewal_budget,
+            "renewal_delivery_hour": renewal_delivery_hour
+        }
+        
+        logger.info(f"调用续费API: task_id={task_id}, budget={renewal_budget/100}元, hour={renewal_delivery_hour}")
+        
+        try:
+            data = self._request("POST", endpoint, json=json_data)
+            logger.info(f"续费成功: {data}")
+            return data
+        except DouyinAPIError as e:
+            logger.error(f"续费失败: {e}")
+            raise
+    
     def close(self):
         """关闭客户端"""
         self.client.close()
