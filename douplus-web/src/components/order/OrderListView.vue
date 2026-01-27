@@ -238,8 +238,8 @@ const loadMembers = async () => {
     const res = await getAccountList()
     if (res.code === 200 && res.data) {
       members.value = res.data.map((account: any) => ({
-        value: account.id,
-        label: account.nickname || account.douyinId
+        id: account.id,
+        nickname: account.remark || account.nickname || `账号${account.id}`
       }))
     }
   } catch (error) {
