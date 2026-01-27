@@ -111,13 +111,16 @@
         <el-table-column type="index" label="排名" width="60" />
         <el-table-column label="视频" min-width="300">
           <template #default="{ row }">
-            <div style="display: flex; gap: 12px; align-items: center;">
+            <div 
+              style="display: flex; gap: 12px; align-items: center; cursor: pointer;"
+              @click="showVideoDetail(row)"
+            >
               <img 
                 :src="row.cover || '/default-cover.jpg'" 
                 style="width: 80px; height: 45px; object-fit: cover; background: #f0f0f0; border-radius: 4px;"
                 @error="handleImageError"
               />
-              <span>{{ row.title || '未知视频' }}</span>
+              <span style="color: #409eff; text-decoration: underline;">{{ row.title || '未知视频' }}</span>
             </div>
           </template>
         </el-table-column>
@@ -144,11 +147,87 @@
       </el-table>
       <el-empty v-if="videoRank.length === 0 && !videoLoading" description="暂无视频数据" />
     </div>
+    
+    <!-- 视频详情弹窗 -->
+    <el-dialog
+      v-model="videoDetailVisible"
+      title="视频详情"
+      width="800px"
+    >
+      <div v-if="currentVideo" class="video-detail">
+        <!-- 视频基本信息 -->
+        <div class="video-header">
+          <img 
+            :src="currentVideo.cover" 
+            class="video-cover-large"
+            @error="handleImageError"
+          />
+          <div class="video-info-detail">
+            <h3>{{ currentVideo.title || '未知视频' }}</h3>
+            <p>视频ID: {{ currentVideo.itemId }}</p>
+            <p>投放订单数: {{ currentVideo.orderCount }}</p>
+          </div>
+        </div>
+        
+        <!-- 效果数据 -->
+        <el-divider content-position="left">效果数据</el-divider>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="消耗">¥{{ currentVideo.totalCost }}</el-descriptions-item>
+          <el-descriptions-item label="播放量">{{ formatNumber(currentVideo.totalPlay) }}</el-descriptions-item>
+          <el-descriptions-item label="点赞">{{ formatNumber(currentVideo.totalLike) }}</el-descriptions-item>
+          <el-descriptions-item label="评论">{{ formatNumber(currentVideo.totalComment) }}</el-descriptions-item>
+          <el-descriptions-item label="转发">{{ formatNumber(currentVideo.totalShare) }}</el-descriptions-item>
+          <el-descriptions-item label="关注">{{ formatNumber(currentVideo.totalFollow) }}</el-descriptions-item>
+        </el-descriptions>
+        
+        <!-- 计算指标 -->
+        <el-divider content-position="left">计算指标</el-divider>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="百播放量">
+            {{ calcHundredPlayRate(currentVideo) }}
+            <el-tooltip content="播放量 / 消耗 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+          <el-descriptions-item label="百转发率">
+            {{ calcHundredShareRate(currentVideo) }}
+            <el-tooltip content="转发 / 播放量 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+          <el-descriptions-item label="点赞率">
+            {{ calcEngagementRate(currentVideo, 'like') }}%
+            <el-tooltip content="点赞 / 播放量 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+          <el-descriptions-item label="评论率">
+            {{ calcEngagementRate(currentVideo, 'comment') }}%
+            <el-tooltip content="评论 / 播放量 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+          <el-descriptions-item label="转发率">
+            {{ calcEngagementRate(currentVideo, 'share') }}%
+            <el-tooltip content="转发 / 播放量 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+          <el-descriptions-item label="关注率">
+            {{ calcEngagementRate(currentVideo, 'follow') }}%
+            <el-tooltip content="关注 / 播放量 × 100" placement="top">
+              <el-icon style="margin-left: 4px;"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { Money, View, Star, ChatDotRound, Share, User, QuestionFilled } from '@element-plus/icons-vue'
 import { getAllAccountsStats, getAllVideoStats } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 
@@ -168,6 +247,8 @@ const stats = ref({
 })
 
 const videoRank = ref<any[]>([])
+const videoDetailVisible = ref(false)
+const currentVideo = ref<any>(null)
 
 // 计算视频排行榜标题
 const videoRankTitle = computed(() => {
@@ -260,6 +341,36 @@ const handleAccountChange = () => {
 const handleImageError = (e: Event) => {
   const target = e.target as HTMLImageElement
   target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iNDUiIHZpZXdCb3g9IjAgMCA4MCA0NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iNDUiIGZpbGw9IiNGNUY1RjUiLz48L3N2Zz4='
+}
+
+// 显示视频详情
+const showVideoDetail = (video: any) => {
+  currentVideo.value = video
+  videoDetailVisible.value = true
+}
+
+// 计算百播放量
+const calcHundredPlayRate = (video: any) => {
+  if (!video.totalCost || video.totalCost === 0) return '0'
+  return ((video.totalPlay / video.totalCost) * 100).toFixed(2)
+}
+
+// 计算百转发率
+const calcHundredShareRate = (video: any) => {
+  if (!video.totalPlay || video.totalPlay === 0) return '0'
+  return ((video.totalShare / video.totalPlay) * 100).toFixed(2)
+}
+
+// 计算互动率（点赞率、评论率、转发率、关注率）
+const calcEngagementRate = (video: any, type: 'like' | 'comment' | 'share' | 'follow') => {
+  if (!video.totalPlay || video.totalPlay === 0) return '0.00'
+  const countMap = {
+    like: video.totalLike || 0,
+    comment: video.totalComment || 0,
+    share: video.totalShare || 0,
+    follow: video.totalFollow || 0
+  }
+  return ((countMap[type] / video.totalPlay) * 100).toFixed(2)
 }
 
 const formatNumber = (num: number) => {
@@ -386,4 +497,38 @@ onMounted(() => {
     }
   }
 }
+
+.video-detail {
+  .video-header {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 24px;
+    
+    .video-cover-large {
+      width: 200px;
+      height: 112px;
+      object-fit: cover;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    
+    .video-info-detail {
+      flex: 1;
+      
+      h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin: 0 0 12px 0;
+      }
+      
+      p {
+        font-size: 14px;
+        color: #666;
+        margin: 8px 0;
+      }
+    }
+  }
+}
 </style>
+

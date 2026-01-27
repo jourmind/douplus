@@ -331,12 +331,12 @@ def get_video_stats_by_account(account_id):
         if not account_exists:
             return error_response('账号不存在或已解绑', code=404)
         
-        # 时间筛选条件（基于统计时间）
+        # 时间筛选条件（基于订单创建时间，与统计卡片保持一致）
         time_filter = ""
         params = {'account_id': account_id, 'user_id': user_id, 'limit': page_size, 'offset': (page_num - 1) * page_size}
         
         if start_time:
-            time_filter = "AND v.stat_time >= :start_time"
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
         # 排序字段映射（包含计算字段）
@@ -399,10 +399,11 @@ def get_video_stats_by_account(account_id):
         
         results = db.execute(video_sql, params).fetchall()
         
-        # 查询总数（从预聚合表）
+        # 查询总数（需要JOIN订单表才能按订单创建时间筛选）
         count_sql = text(f"""
             SELECT COUNT(DISTINCT v.item_id) 
             FROM douplus_video_stats_agg v
+            INNER JOIN douplus_order o ON v.item_id = o.item_id AND o.account_id = v.account_id
             WHERE v.account_id = :account_id 
               AND v.user_id = :user_id
               {time_filter}
@@ -464,18 +465,19 @@ def get_all_video_stats():
             params['account_id'] = int(account_id)
         
         if start_time:
-            time_filter = "AND v.stat_time >= :start_time"
+            # 修复：使用订单创建时间筛选，与统计卡片保持一致
+            time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
         # 排序字段映射（包含计算字段）
-        # 注意：前端'playCount'实际指的是百播放量，而不是播放量
+        # 注意：这个API用于Dashboard视频排行榜，playCount指真实播放量
         sort_mapping = {
             'cost': 'total_cost', 
-            'playCount': 'play_per_100_cost',      # 前端playCount = 百播放量
+            'playCount': 'total_play',                  # Dashboard排行榜：按播放量排序
             'likeCount': 'total_like', 
             'shareCount': 'total_share', 
             'convertCount': 'total_convert',
-            'playPer100Cost': 'play_per_100_cost',  # 百播放量（备用）
+            'playPer100Cost': 'play_per_100_cost',  # 百播放量
             'shareRate': 'share_per_100_play',      # 百转发率
             'convertCost': 'avg_convert_cost',      # 转化成本
             'costPerPlay': 'avg_convert_cost'       # 前端costPerPlay = 转化成本
@@ -483,19 +485,21 @@ def get_all_video_stats():
         sort_column = sort_mapping.get(sort_by, 'total_cost')
         sort_dir = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        # 从预聚合表查询（5分钟粒度），按天聚合
-        # 注意：使用COALESCE包裹SUM，确保无数据时返回0而不是NULL
+        # 使用预聚合表 + min_order_create_time精确筛选
+        # 核心：预聚合表新增了min_order_create_time字段，记录视频最早订单创建时间
+        # 优势：时间精度完全准确，与统计卡片完全一致
         video_sql = text(f"""
             SELECT 
                 v.item_id,
                 MAX(o.aweme_title) as title,
                 MAX(o.aweme_cover) as cover,
-                COUNT(DISTINCT o.order_id) as order_count,
+                MAX(v.order_count) as order_count,
                 COALESCE(SUM(v.total_cost), 0) as total_cost,
                 COALESCE(SUM(v.total_play), 0) as total_play,
                 COALESCE(SUM(v.total_like), 0) as total_like,
                 COALESCE(SUM(v.total_comment), 0) as total_comment,
                 COALESCE(SUM(v.total_share), 0) as total_share,
+                COALESCE(SUM(v.total_follow), 0) as total_follow,
                 CASE 
                     WHEN SUM(v.total_cost) > 0 
                     THEN SUM(v.total_play) / SUM(v.total_cost) * 100
@@ -512,12 +516,10 @@ def get_all_video_stats():
                     ELSE 0 
                 END as avg_convert_cost
             FROM douplus_video_stats_agg v
-            INNER JOIN douyin_account a ON v.account_id = a.id
             INNER JOIN douplus_order o ON v.item_id = o.item_id AND v.account_id = o.account_id
-            WHERE v.user_id = :user_id 
-              AND a.deleted = 0
-              {account_filter_order}
-              {time_filter}
+            WHERE v.user_id = :user_id
+              {account_filter_video.replace('v.', 'v.')}
+              {time_filter.replace('o.order_create_time', 'v.min_order_create_time')}
             GROUP BY v.item_id
             ORDER BY {sort_column} {sort_dir}
             LIMIT :limit OFFSET :offset
@@ -525,15 +527,13 @@ def get_all_video_stats():
         
         results = db.execute(video_sql, params).fetchall()
         
-        # 查询总数（从预聚合表，JOIN账号表过滤已解绑）
+        # 统计总数（使用相同的筛选逻辑）
         count_sql = text(f"""
-            SELECT COUNT(DISTINCT v.item_id) 
+            SELECT COUNT(DISTINCT v.item_id)
             FROM douplus_video_stats_agg v
-            INNER JOIN douyin_account a ON v.account_id = a.id
-            WHERE v.user_id = :user_id 
-              AND a.deleted = 0
+            WHERE v.user_id = :user_id
               {account_filter_video}
-              {time_filter}
+              {time_filter.replace('o.order_create_time', 'v.min_order_create_time')}
         """)
         total = db.execute(count_sql, params).fetchone()[0]
         

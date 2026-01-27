@@ -221,9 +221,9 @@ def batch_renew_orders():
         # 3. 遍历处理每个订单
         for order_id in order_ids:
             try:
-                # 3.1 查询订单信息
+                # 3.1 查询订单信息（需要aweme_sec_uid）
                 order_sql = text("""
-                    SELECT o.order_id, o.status, a.open_id, a.access_token_encrypted, a.advertiser_id
+                    SELECT o.order_id, o.status, a.open_id, a.access_token_encrypted, a.advertiser_id, a.aweme_sec_uid
                     FROM douplus_order o
                     JOIN douyin_account a ON o.account_id = a.id
                     WHERE o.order_id = :order_id AND o.user_id = :user_id AND o.deleted = 0
@@ -239,7 +239,7 @@ def batch_renew_orders():
                     failed_count += 1
                     continue
                 
-                dy_order_id, status, open_id, token_encrypted, advertiser_id = order
+                dy_order_id, status, open_id, token_encrypted, advertiser_id, aweme_sec_uid = order
                 
                 # 3.2 验证订单状态
                 if status not in ['DELIVERING', 'RUNNING']:
@@ -251,10 +251,20 @@ def batch_renew_orders():
                     failed_count += 1
                     continue
                 
-                # 3.3 解密Access Token
+                # 3.3 验证aweme_sec_uid
+                if not aweme_sec_uid:
+                    details.append({
+                        'orderId': order_id,
+                        'success': False,
+                        'message': '缺少抖音号ID（aweme_sec_uid）'
+                    })
+                    failed_count += 1
+                    continue
+                
+                # 3.4 解密Access Token
                 access_token = decrypt_access_token(token_encrypted)
                 
-                # 3.4 调用抖音DOU+续费API
+                # 3.5 调用抖音DOU+续费API
                 client = DouyinClient(
                     app_id=None,  # 从环境变量读取
                     app_secret=None,
@@ -264,10 +274,14 @@ def batch_renew_orders():
                 
                 client.advertiser_id = advertiser_id
                 
+                # 将元转为分（抖音API要求单位为分）
+                renewal_budget = int(budget * 100)
+                
                 result = client.renew_order(
-                    order_id=dy_order_id,
-                    budget=budget,
-                    duration=duration
+                    aweme_sec_uid=aweme_sec_uid,
+                    task_id=dy_order_id,
+                    renewal_budget=renewal_budget,
+                    renewal_delivery_hour=duration
                 )
                 
                 details.append({

@@ -50,6 +50,7 @@ class VideoAggTask(Task):
                     total_convert, total_home_visited,
                     avg_5s_rank, avg_convert_cost,
                     play_per_100_cost, like_rate, share_rate, share_per_100_play,
+                    min_order_create_time,
                     agg_time, data_version,
                     create_time, update_time
                 )
@@ -105,6 +106,9 @@ class VideoAggTask(Task):
                         ELSE 0 
                     END as share_per_100_play,
                     
+                    -- 最早订单创建时间（用于时间筛选）
+                    MIN(o.order_create_time) as min_order_create_time,
+                    
                     NOW() as agg_time,
                     1 as data_version,
                     NOW() as create_time,
@@ -133,6 +137,7 @@ class VideoAggTask(Task):
                     like_rate = VALUES(like_rate),
                     share_rate = VALUES(share_rate),
                     share_per_100_play = VALUES(share_per_100_play),
+                    min_order_create_time = VALUES(min_order_create_time),
                     agg_time = NOW(),
                     data_version = data_version + 1,
                     update_time = NOW()

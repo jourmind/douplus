@@ -72,15 +72,17 @@
     </el-card>
     
     <!-- 任务详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="任务详情" width="60%">
+    <el-dialog v-model="detailVisible" title="任务详情" width="600px">
       <div v-if="currentTask" class="task-detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="任务ID">{{ currentTask.id }}</el-descriptions-item>
           <el-descriptions-item label="订单ID">{{ currentTask.orderId }}</el-descriptions-item>
-          <el-descriptions-item label="视频标题">{{ currentTask.videoTitle }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ currentTask.status }}</el-descriptions-item>
-          <el-descriptions-item label="预算">{{ currentTask.budget }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ currentTask.createTime }}</el-descriptions-item>
+          <el-descriptions-item label="视频ID">{{ currentTask.itemId }}</el-descriptions-item>
+          <el-descriptions-item label="账号ID">{{ currentTask.accountId }}</el-descriptions-item>
+          <el-descriptions-item label="营销目标">{{ formatTargetType(currentTask.targetType) }}</el-descriptions-item>
+          <el-descriptions-item label="预算">¥{{ currentTask.budget }}</el-descriptions-item>
+          <el-descriptions-item label="时长">{{ currentTask.duration }}小时</el-descriptions-item>
+          <el-descriptions-item v-if="currentTask.renewCount" label="成功续费次数">{{ currentTask.renewCount }}次</el-descriptions-item>
         </el-descriptions>
       </div>
     </el-dialog>
@@ -480,6 +482,19 @@ const handleColumnConfigChange = (selectedKeys: string[]) => {
     console.error('保存列配置失败', e)
     ElMessage.warning('保存列配置失败')
   }
+}
+
+// 格式化营销目标
+const formatTargetType = (targetType: string) => {
+  const typeMap: Record<string, string> = {
+    'VIDEO': '视频推广',
+    'LIVE': '直播推广',
+    'GOODS': '商品推广',
+    'AWEME': '内容加热',
+    'USER': '粉丝增长',
+    'APP': '应用推广'
+  }
+  return typeMap[targetType] || targetType || '-'
 }
 
 // 暴露刷新方法给父组件
