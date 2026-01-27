@@ -184,3 +184,42 @@ class DouplusVideoStatsAgg(Base):
     
     create_time = Column(DateTime, default=datetime.now)
     update_time = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SyncTaskLog(Base):
+    """同步任务日志表"""
+    __tablename__ = 'sync_task_log'
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False)
+    task_type = Column(String(20), nullable=False)  # order/stats
+    sync_mode = Column(String(20))  # full/incremental
+    status = Column(String(20), nullable=False, default='pending')  # pending/running/completed/failed
+    total_accounts = Column(Integer, default=0)
+    completed_accounts = Column(Integer, default=0)
+    total_records = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    fail_count = Column(Integer, default=0)
+    error_message = Column(Text)
+    start_time = Column(DateTime)
+    end_time = Column(DateTime)
+    celery_task_id = Column(String(255))
+    create_time = Column(DateTime, default=datetime.now)
+    update_time = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SyncTaskDetail(Base):
+    """同步任务明细表"""
+    __tablename__ = 'sync_task_detail'
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(BigInteger, nullable=False)
+    account_id = Column(BigInteger, nullable=False)
+    account_name = Column(String(100))
+    status = Column(String(20), nullable=False, default='pending')  # pending/running/completed/failed
+    record_count = Column(Integer, default=0)
+    error_message = Column(Text)
+    start_time = Column(DateTime)
+    end_time = Column(DateTime)
+    create_time = Column(DateTime, default=datetime.now)
+    update_time = Column(DateTime, default=datetime.now, onupdate=datetime.now)

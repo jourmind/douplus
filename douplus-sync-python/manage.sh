@@ -28,6 +28,11 @@ case "$1" in
     
     api)
         echo "启动API服务..."
+        # 加载环境变量
+        if [ -f load_env.sh ]; then
+            source load_env.sh
+            echo "✓ 环境变量已加载"
+        fi
         nohup python3 api_server.py > logs/api.log 2>&1 &
         echo $! > logs/api.pid
         echo "API服务已启动"
@@ -35,6 +40,11 @@ case "$1" in
     
     start)
         echo "启动完整服务..."
+        # 加载环境变量
+        if [ -f load_env.sh ]; then
+            source load_env.sh
+            echo "✓ 环境变量已加载"
+        fi
         # 启动Worker
         celery -A celery_app worker --loglevel=info --logfile=logs/worker.log --pidfile=logs/worker.pid --detach
         # 启动Beat

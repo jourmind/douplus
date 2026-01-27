@@ -99,7 +99,7 @@
     <!-- 视频排行 -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">视频排行榜（所有账号）</div>
+        <div class="card-title">视频排行榜{{ videoRankTitle }}</div>
         <el-select v-model="rankingSort" size="small" style="width: 120px;" @change="loadAllVideoStats">
           <el-option label="按消耗" value="cost" />
           <el-option label="按播放量" value="playCount" />
@@ -148,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { getAllAccountsStats, getAllVideoStats } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 
@@ -168,6 +168,18 @@ const stats = ref({
 })
 
 const videoRank = ref<any[]>([])
+
+// 计算视频排行榜标题
+const videoRankTitle = computed(() => {
+  if (!filterAccountId.value) {
+    return ''  // 不显示后缀
+  }
+  const account = accountList.value.find(a => a.id === filterAccountId.value)
+  if (account) {
+    return `（${account.nickname || account.douyinId}）`
+  }
+  return ''
+})
 
 // 加载账号列表
 const loadAccounts = async () => {

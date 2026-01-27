@@ -64,6 +64,12 @@ app.conf.beat_schedule = {
         'task': 'app.tasks.video_agg.aggregate_current_window',
         'schedule': crontab(minute='2-59/5'),  # 2,7,12,17...
     },
+    
+    # 每天凌晨2点自动刷新即将过期的Token
+    'refresh-expiring-tokens': {
+        'task': 'app.tasks.token_refresh.refresh_expiring_tokens',
+        'schedule': crontab(hour=2, minute=0),
+    },
 }
 
 # 自动发现任务
@@ -84,6 +90,10 @@ from app.tasks.video_agg import (
     aggregate_all_recent,
     rebuild_video_agg_table
 )
+from app.tasks.token_refresh import (
+    refresh_expiring_tokens,
+    refresh_single_account_token
+)
 
 # 将函数注册为Celery任务
 app.task(name='app.tasks.order_sync.sync_all_accounts_incremental')(sync_all_accounts_incremental)
@@ -94,3 +104,5 @@ app.task(name='app.tasks.stats_sync.sync_single_account_stats')(sync_single_acco
 app.task(name='app.tasks.video_agg.aggregate_current_window')(aggregate_current_window)
 app.task(name='app.tasks.video_agg.aggregate_all_recent')(aggregate_all_recent)
 app.task(name='app.tasks.video_agg.rebuild_video_agg_table')(rebuild_video_agg_table)
+app.task(name='app.tasks.token_refresh.refresh_expiring_tokens')(refresh_expiring_tokens)
+app.task(name='app.tasks.token_refresh.refresh_single_account_token')(refresh_single_account_token)

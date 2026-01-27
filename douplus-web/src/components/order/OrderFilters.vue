@@ -1,14 +1,25 @@
 <template>
   <div class="order-filters">
     <div class="filter-left">
-      <el-input 
+      <!-- 视频标题下拉选择（支持搜索） -->
+      <el-select 
         v-model="localFilters.keyword" 
-        placeholder="视频标题" 
-        prefix-icon="Search" 
+        placeholder="视频标题 请选择" 
+        filterable
+        remote
+        :remote-method="searchVideoTitles"
+        :loading="titlesLoading"
         clearable 
         style="width: 180px"
-        @input="emitChange"
-      />
+        @change="emitChange"
+      >
+        <el-option 
+          v-for="title in videoTitles" 
+          :key="title.value" 
+          :label="title.label" 
+          :value="title.value" 
+        />
+      </el-select>
       
       <!-- 成员筛选 -->
       <el-select 
@@ -77,7 +88,8 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { reactive, watch, ref, onMounted } from 'vue'
+import { getVideoTitles } from '@/api/douplus'
 
 // 成员接口
 export interface MemberOption {
@@ -111,6 +123,47 @@ const emit = defineEmits<{
   (e: 'change', filters: OrderFiltersType): void
   (e: 'export'): void
 }>()
+
+// 视频标题列表
+const videoTitles = ref<{label: string, value: string}[]>([])
+const titlesLoading = ref(false)
+
+// 加载视频标题列表
+const loadVideoTitles = async (query?: string) => {
+  titlesLoading.value = true
+  try {
+    const res = await getVideoTitles()
+    if (res.code === 200 && res.data) {
+      videoTitles.value = res.data
+      // 如果有搜索关键词，进行前端过滤
+      if (query) {
+        videoTitles.value = res.data.filter((item: any) => 
+          item.label.toLowerCase().includes(query.toLowerCase())
+        )
+      }
+    }
+  } catch (error) {
+    console.error('加载视频标题失败', error)
+  } finally {
+    titlesLoading.value = false
+  }
+}
+
+// 搜索视频标题（远程搜索）
+const searchVideoTitles = (query: string) => {
+  if (query) {
+    // 前端过滤
+    loadVideoTitles(query)
+  } else {
+    // 显示全部
+    loadVideoTitles()
+  }
+}
+
+// 页面加载时获取视频列表
+onMounted(() => {
+  loadVideoTitles()
+})
 
 // 日期快捷选项
 const dateShortcuts = [

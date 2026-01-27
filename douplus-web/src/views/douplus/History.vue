@@ -26,22 +26,39 @@
     
     <el-card class="table-card" shadow="never">
       <div class="table-header">
-        <span class="order-count">共 {{ pagination.total }} 个订单</span>
+        <div class="header-left">
+          <span class="order-count">共 {{ pagination.total }} 个订单</span>
+          <!-- 批量操作栏 -->
+          <div v-if="selectedTasks.length > 0" class="batch-actions">
+            <el-tag type="info" size="large">
+              已选择 {{ selectedTasks.length }} 个订单
+            </el-tag>
+            <el-button type="primary" size="small" @click="handleBatchRenew">
+              批量续费
+            </el-button>
+            <el-button size="small" @click="clearSelection">
+              取消选择
+            </el-button>
+          </div>
+        </div>
         <SortCascader v-model="sortOption" @change="handleSortChange" />
       </div>
       
       <!-- 使用共享订单表格组件 -->
       <OrderTable 
+        ref="orderTableRef"
         :tasks="tasks"
         :loading="loading"
         :show-account-column="true"
         :show-cancel-button="true"
         :show-renew-button="true"
+        :selectable="true"
         @view-details="viewDetails"
         @cancel="cancelTask"
         @delete="deleteTask"
         @renew="handleRenew"
         @reorder="handleReorder"
+        @selection-change="handleSelectionChange"
       />
       
       <el-pagination
@@ -149,6 +166,13 @@
         <el-button type="primary" @click="closeSyncDialog">确定</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 批量续费对话框 -->
+    <BatchRenewDialog 
+      v-model="batchRenewVisible"
+      :tasks="selectedTasks"
+      @submit="handleBatchRenewSubmit"
+    />
   </div>
 </template>
 
@@ -159,7 +183,7 @@ import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-p
 import type { DouplusTaskVO } from '@/api/types'
 import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
-import { OrderTable, OrderFilters, SortCascader, RenewDialog } from '@/components/order'
+import { OrderTable, OrderFilters, SortCascader, RenewDialog, BatchRenewDialog } from '@/components/order'
 import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
 
 interface Pagination {
@@ -185,6 +209,11 @@ const syncStatus = ref<'idle' | 'syncing' | 'completed' | 'error'>('idle')
 const syncCount = ref(0)
 const syncProgress = ref(0)
 let syncTimer: ReturnType<typeof setInterval> | null = null
+
+// 批量续费相关
+const selectedTasks = ref<any[]>([])
+const batchRenewVisible = ref(false)
+const orderTableRef = ref<any>(null)
 
 // 初始化默认时间范围为近30天
 const getDefaultDateRange = (): [string, string] => {
@@ -453,6 +482,71 @@ const handleReorder = (task: any) => {
   renewVisible.value = true
 }
 
+// 批量续费 - 处理选择变化
+const handleSelectionChange = (selection: any[]) => {
+  selectedTasks.value = selection
+}
+
+// 批量续费 - 打开对话框
+const handleBatchRenew = () => {
+  if (selectedTasks.value.length === 0) {
+    ElMessage.warning('请先选择要续费的订单')
+    return
+  }
+  batchRenewVisible.value = true
+}
+
+// 批量续费 - 取消选择
+const clearSelection = () => {
+  if (orderTableRef.value) {
+    orderTableRef.value.$refs.table?.clearSelection()
+  }
+  selectedTasks.value = []
+}
+
+// 批量续费 - 提交
+const handleBatchRenewSubmit = async (data: { tasks: any[], budget: number, duration: number }) => {
+  try {
+    const { tasks, budget, duration } = data
+    
+    // 调用批量续费API
+    const orderIds = tasks.map(t => t.orderId).filter(Boolean)
+    
+    if (orderIds.length === 0) {
+      ElMessage.error('选中的订单缺少订单ID')
+      return
+    }
+    
+    // TODO: 这里需要添加批量续费API
+    const response = await fetch('/api/douplus/order/batch-renew', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        orderIds,
+        budget,
+        duration
+      })
+    })
+    
+    const result = await response.json()
+    
+    if (result.code === 200) {
+      ElMessage.success(`成功续费 ${result.data.successCount} 个订单`)
+      batchRenewVisible.value = false
+      clearSelection()
+      loadTasks() // 刷新列表
+    } else {
+      ElMessage.error(result.message || '批量续费失败')
+    }
+  } catch (error: any) {
+    console.error('批量续费失败', error)
+    ElMessage.error(error.message || '批量续费失败')
+  }
+}
+
 // 续费/再次下单 - 确认提交
 const confirmRenewOrReorder = async (data: { 
   task: any, 
@@ -711,5 +805,23 @@ onMounted(() => {
 
 .sync-result .count-num {
   color: #67c23a;
+}
+
+/* 批量操作栏 */
+.table-header {
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex: 1;
+    
+    .batch-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-left: 20px;
+      border-left: 1px solid #e4e7ed;
+    }
+  }
 }
 </style>

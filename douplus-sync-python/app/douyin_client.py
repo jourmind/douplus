@@ -89,9 +89,18 @@ class DouyinClient:
         logger.info(f"调用订单列表API: aweme_sec_uid={aweme_sec_uid}, page={page}")
         
         data = self._request("GET", endpoint, params=params)
-        orders = data.get("list", [])
+        # 修复：API返回的字段是order_list，不是list
+        orders = data.get("order_list", [])
         
+        # 打印完整响应用于调试
+        logger.info(f"API响应数据keys: {list(data.keys())}")
         logger.info(f"获取到{len(orders)}条订单")
+        
+        # 如果没有订单但有page_info，说明结构正确但列表为空
+        if not orders and "page_info" in data:
+            total_num = data.get("page_info", {}).get("total_num", 0)
+            logger.warning(f"订单列表为空，但total_num={total_num}，可能是数据结构问题")
+        
         return orders
     
     def get_order_report(

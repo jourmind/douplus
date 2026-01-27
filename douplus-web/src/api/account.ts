@@ -31,6 +31,11 @@ export function deleteAccount(id: number): Promise<ApiResponse<void>> {
   return request.delete(`/account/${id}`)
 }
 
+// 刷新账号Token
+export function refreshAccountToken(id: number): Promise<ApiResponse<{ tokenExpiresAt: string; message: string }>> {
+  return request.post(`/account/${id}/refresh-token`)
+}
+
 // 获取OAuth授权URL
 export function getOAuthUrl(): Promise<ApiResponse<string>> {
   return request.get('/account/oauth/url')

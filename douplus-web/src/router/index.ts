@@ -47,7 +47,7 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'records',
             name: 'DouplusRecords',
-            component: () => import('@/views/douplus/History.vue'),
+            component: () => import('@/views/douplus/Records.vue'),
             meta: { title: '投放记录' }
           }
         ]

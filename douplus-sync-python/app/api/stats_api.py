@@ -63,6 +63,24 @@ def get_account_stats(account_id):
     
     db = SessionLocal()
     try:
+        # 首先验证账号是否存在且未解绑
+        account_check_sql = text("""
+            SELECT id FROM douyin_account 
+            WHERE id = :account_id AND user_id = :user_id AND deleted = 0
+        """)
+        account_exists = db.execute(account_check_sql, {
+            'account_id': account_id,
+            'user_id': user_id
+        }).fetchone()
+        
+        if not account_exists:
+            # 账号已解绑，返回空数据
+            return success_response({
+                'cost': 0, 'playCount': 0, 'likeCount': 0, 'commentCount': 0,
+                'shareCount': 0, 'fansCount': 0, 'convertCount': 0,
+                'videoCount': 0, 'orderCount': 0
+            })
+        
         # 构建时间筛选条件
         time_filter = ""
         params = {'account_id': account_id, 'user_id': user_id}
@@ -72,29 +90,33 @@ def get_account_stats(account_id):
             params['start_time'] = start_time
         
         # 从原始订单表和效果表查询（按订单创建时间筛选）
-        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
+        # 修复：只JOIN每个订单的最新效果数据（避免重复）
+        # 注意：使用COALESCE包裹SUM，确保无数据时返回0而不是NULL
         stats_sql = text(f"""
             SELECT 
-                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
-                SUM(COALESCE(s.total_play, 0)) as total_play,
-                SUM(COALESCE(s.custom_like, 0)) as total_like,
-                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
-                SUM(COALESCE(s.dy_share, 0)) as total_share,
-                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
-                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert,
+                COALESCE(SUM(COALESCE(s.stat_cost, 0)), 0) as total_cost,
+                COALESCE(SUM(COALESCE(s.total_play, 0)), 0) as total_play,
+                COALESCE(SUM(COALESCE(s.custom_like, 0)), 0) as total_like,
+                COALESCE(SUM(COALESCE(s.dy_comment, 0)), 0) as total_comment,
+                COALESCE(SUM(COALESCE(s.dy_share, 0)), 0) as total_share,
+                COALESCE(SUM(COALESCE(s.dy_follow, 0)), 0) as total_follow,
+                COALESCE(SUM(COALESCE(s.dp_target_convert_cnt, 0)), 0) as total_convert,
                 COUNT(DISTINCT o.item_id) as video_count,
                 COUNT(DISTINCT o.id) as order_count
             FROM douplus_order o
-            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
             LEFT JOIN (
-                SELECT order_id, MAX(stat_time) as max_time
-                FROM douplus_order_stats
-                GROUP BY order_id
-            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+                SELECT s1.order_id, s1.stat_cost, s1.total_play, s1.custom_like,
+                       s1.dy_comment, s1.dy_share, s1.dy_follow, s1.dp_target_convert_cnt
+                FROM douplus_order_stats s1
+                INNER JOIN (
+                    SELECT order_id, MAX(stat_time) as max_time
+                    FROM douplus_order_stats
+                    GROUP BY order_id
+                ) s2 ON s1.order_id = s2.order_id AND s1.stat_time = s2.max_time
+            ) s ON o.order_id = s.order_id
             WHERE o.account_id = :account_id 
               AND o.user_id = :user_id 
               AND o.deleted = 0
-              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
               {time_filter}
         """)
         
@@ -161,29 +183,35 @@ def get_all_accounts_stats():
             time_filter = "AND o.order_create_time >= :start_time"
             params['start_time'] = start_time
         
-        # 从原始订单表和效果表查询（按订单创建时间筛选）
-        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
+        # 从原始订单表和效果表查询（按订单创建时间筛选，过滤已解绑账号）
+        # 修复：只JOIN每个订单的最新效果数据（避免重复）
+        # 注意：使用COALESCE包裹SUM，确保无数据时返回0而不是NULL
         stats_sql = text(f"""
             SELECT 
-                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
-                SUM(COALESCE(s.total_play, 0)) as total_play,
-                SUM(COALESCE(s.custom_like, 0)) as total_like,
-                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
-                SUM(COALESCE(s.dy_share, 0)) as total_share,
-                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
-                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert,
+                COALESCE(SUM(COALESCE(s.stat_cost, 0)), 0) as total_cost,
+                COALESCE(SUM(COALESCE(s.total_play, 0)), 0) as total_play,
+                COALESCE(SUM(COALESCE(s.custom_like, 0)), 0) as total_like,
+                COALESCE(SUM(COALESCE(s.dy_comment, 0)), 0) as total_comment,
+                COALESCE(SUM(COALESCE(s.dy_share, 0)), 0) as total_share,
+                COALESCE(SUM(COALESCE(s.dy_follow, 0)), 0) as total_follow,
+                COALESCE(SUM(COALESCE(s.dp_target_convert_cnt, 0)), 0) as total_convert,
                 COUNT(DISTINCT o.item_id) as video_count,
                 COUNT(DISTINCT o.id) as order_count
             FROM douplus_order o
-            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
+            INNER JOIN douyin_account a ON o.account_id = a.id
             LEFT JOIN (
-                SELECT order_id, MAX(stat_time) as max_time
-                FROM douplus_order_stats
-                GROUP BY order_id
-            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
+                SELECT s1.order_id, s1.stat_cost, s1.total_play, s1.custom_like,
+                       s1.dy_comment, s1.dy_share, s1.dy_follow, s1.dp_target_convert_cnt
+                FROM douplus_order_stats s1
+                INNER JOIN (
+                    SELECT order_id, MAX(stat_time) as max_time
+                    FROM douplus_order_stats
+                    GROUP BY order_id
+                ) s2 ON s1.order_id = s2.order_id AND s1.stat_time = s2.max_time
+            ) s ON o.order_id = s.order_id
             WHERE o.user_id = :user_id 
               AND o.deleted = 0
-              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+              AND a.deleted = 0
               {account_filter}
               {time_filter}
         """)

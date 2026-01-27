@@ -54,8 +54,11 @@ export const getAccountStats = (accountId: number, params?: {
 /**
  * 获取用户所有账号的汇总统计数据
  */
-export const getAllAccountsStats = () => {
-  return get('/douplus/task/stats')
+export const getAllAccountsStats = (params?: {
+  period?: 'today' | '7d' | '30d' | 'all'
+  accountId?: number
+}) => {
+  return get('/douplus/task/stats', params)
 }
 
 /**
@@ -76,6 +79,7 @@ export const getVideoStatsByAccount = (accountId: number, params?: {
  */
 export const getAllVideoStats = (params?: {
   period?: 'today' | '7d' | '30d' | 'all'
+  accountId?: number
   sortBy?: 'cost' | 'playCount' | 'likeCount' | 'shareCount' | 'convertCount' | 'playPer100Cost'
   sortOrder?: 'asc' | 'desc'
   pageNum?: number
@@ -143,4 +147,13 @@ export const syncAllOrders = () => {
  */
 export const getSyncStatus = () => {
   return get<SyncStatus>('/douplus/task/sync-status')
+}
+
+/**
+ * 获取视频标题列表（用于筛选器下拉选择）
+ */
+export const getVideoTitles = (params?: {
+  accountId?: number
+}) => {
+  return get<{label: string, value: string}[]>('/douplus/video/titles', params)
 }

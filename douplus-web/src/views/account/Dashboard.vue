@@ -142,31 +142,13 @@
         </el-button>
       </div>
 
-      <div class="orders-card card">
-        <!-- 使用共享筛选组件 -->
-        <OrderFilters 
-          v-model="orderFilters" 
-          @change="handleFilterChange"
-          @export="exportOrders" 
-        />
-
-        <!-- 订单统计和排序 -->
-        <div class="orders-toolbar">
-          <span class="orders-count">共 {{ orderTotal }} 个订单（显示前 {{ orderList.length }} 条）</span>
-          <SortCascader v-model="sortOption" @change="handleSortChange" />
-        </div>
-
-        <!-- 使用共享订单表格组件 -->
-        <OrderTable 
-          :tasks="orderList"
-          :loading="ordersLoading"
-          :show-account-column="false"
-          :show-cancel-button="false"
-          @view-details="viewOrderDetails"
-        />
-        
-        <el-empty v-if="orderList.length === 0 && !ordersLoading" description="暂无订单数据" />
-      </div>
+      <!-- 使用统一的订单列表组件 -->
+      <OrderListView 
+        :account-id="accountId"
+        :show-member-filter="false"
+        :show-account-column="false"
+        @export="exportOrders"
+      />
     </div>
 
     <!-- 返回按钮 -->
@@ -184,12 +166,11 @@ import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getAccountById } from '@/api/account'
-import { getTaskList, getAccountStats, getVideoStatsByAccount } from '@/api/douplus'
-import type { DouyinAccount, DouplusTask } from '@/api/types'
+import { getAccountStats, getVideoStatsByAccount } from '@/api/douplus'
+import type { DouyinAccount } from '@/api/types'
 import * as echarts from 'echarts'
 import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
-import { OrderTable, OrderFilters, SortCascader } from '@/components/order'
-import type { OrderFiltersType, SortOption } from '@/components/order'
+import { OrderListView } from '@/components/order'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,48 +186,9 @@ const videoStats = ref<any[]>([])
 const videoStatsLoading = ref(false)
 const rankingSort = ref('cost')
 
-// 订单相关
-const ordersLoading = ref(false)
-
-// 初始化默认时间范围为近30天
-const getDefaultDateRange = (): [string, string] => {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - 29)
-  return [
-    start.toISOString().split('T')[0],
-    end.toISOString().split('T')[0]
-  ]
-}
-
-const orderFilters = ref<OrderFiltersType>({
-  dateRange: getDefaultDateRange()
-})
-const sortOption = ref<SortOption>({
-  field: 'createTime',
-  order: 'desc'
-})
-const orderList = ref<any[]>([])
-const orderTotal = ref(0)  // 添加总数
-
-// 筛选条件变化 - 重新请求后端
-const handleFilterChange = () => {
-  loadOrders()
-}
-
-// 排序变化 - 重新请求后端
-const handleSortChange = () => {
-  loadOrders()
-}
-
 // 导出订单
 const exportOrders = () => {
   ElMessage.info('导出功能开发中')
-}
-
-// 查看订单详情
-const viewOrderDetails = (order: any) => {
-  ElMessage.info('查看详情功能开发中')
 }
 
 const navItems = [
@@ -403,69 +345,6 @@ const handlePeriodChange = () => {
 const handleImageError = (e: Event) => {
   const target = e.target as HTMLImageElement
   target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iODAiIGZpbGw9IiNGNUY1RjUiLz48cGF0aCBkPSJNMzAgMzVINTBWNDVIMzBWMzVaIiBmaWxsPSIjQ0NDIi8+PC9zdmc+'
-}
-
-// 加载订单列表 - 使用后端分页和排序，支持时间筛选
-const loadOrders = async () => {
-  ordersLoading.value = true
-  try {
-    const params: any = {
-      accountId: accountId,
-      pageNum: 1,
-      pageSize: 50,  // 优化：首次只加载50条，提升响应速度
-      sortField: sortOption.value.field,
-      sortOrder: sortOption.value.order
-    }
-    
-    // 添加关键词搜索
-    if (orderFilters.value.keyword) {
-      params.keyword = orderFilters.value.keyword
-    }
-    
-    // 添加时间范围筛选
-    if (orderFilters.value.dateRange && orderFilters.value.dateRange.length === 2) {
-      params.startDate = orderFilters.value.dateRange[0]
-      params.endDate = orderFilters.value.dateRange[1]
-    }
-    
-    // 添加状态筛选
-    if (orderFilters.value.status) {
-      params.status = orderFilters.value.status
-    }
-    
-    const res = await getTaskList(params)
-    if (res.code === 200) {
-      orderTotal.value = res.data.total || 0  // 保存总数
-      // 转换订单数据格式，与History.vue统一
-      orderList.value = (res.data.records || []).map((task: DouplusTask) => ({
-        id: task.id,
-        videoCover: task.videoCoverUrl,
-        videoTitle: task.videoTitle || '视频标题',
-        itemId: task.itemId,
-        accountNickname: account.value?.nickname || '',
-        status: task.status,
-        actualCost: task.actualCost || 0,
-        budget: task.budget,
-        actualExposure: task.actualExposure || 0,
-        playCount: task.playCount || task.actualExposure || 0,
-        likeCount: task.likeCount || 0,
-        shareCount: task.shareCount || 0,
-        clickCount: task.clickCount || 0,
-        followCount: task.followCount || 0,
-        componentClickCount: task.clickCount || 0,
-        playDuration5sRank: task.avg5sRate || 0,
-        customConvertCost: task.avgConvertCost || 0,
-        dpTargetConvertCnt: task.dpTargetConvertCnt || 0,
-        orderEndTime: task.orderEndTime ? formatDateTime(task.orderEndTime) : '-',
-        createTime: formatDate(task.createTime),
-        createTimeRaw: task.createTime,  // 保留原始时间用于排序
-      }))
-    }
-  } catch (error) {
-    console.error('加载订单失败', error)
-  } finally {
-    ordersLoading.value = false
-  }
 }
 
 // 获取投放目标文本
@@ -970,19 +849,6 @@ onMounted(async () => {
     .arrow-icon {
       margin-left: 4px;
     }
-  }
-}
-
-.orders-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0;
-  margin-bottom: 12px;
-  
-  .orders-count {
-    font-size: 13px;
-    color: #1890ff;
   }
 }
 

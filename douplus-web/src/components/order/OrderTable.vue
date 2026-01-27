@@ -5,7 +5,16 @@
     style="width: 100%"
     :max-height="600"
     :header-cell-style="{ background: '#fff', color: '#333', fontWeight: '500' }"
+    @selection-change="handleSelectionChange"
   >
+    <!-- 多选列 -->
+    <el-table-column 
+      v-if="selectable" 
+      type="selection" 
+      width="55"
+      :selectable="isSelectableRow"
+    />
+    
     <el-table-column label="视频" min-width="280">
       <template #default="{ row }">
         <div class="video-cell">
@@ -30,14 +39,14 @@
     </el-table-column>
     
     <!-- 投放状态 -->
-    <el-table-column label="投放状态" width="100">
+    <el-table-column v-if="isColumnVisible('status')" label="投放状态" width="100">
       <template #default="{ row }">
         <el-tag :type="getStatusTagType(row.status)" size="small">{{ getStatusText(row.status) }}</el-tag>
       </template>
     </el-table-column>
     
     <!-- 投放金额：消耗/预算 -->
-    <el-table-column width="140">
+    <el-table-column v-if="isColumnVisible('amount')" width="140">
       <template #header>
         <div class="header-with-tooltip">
           <span>投放金额</span>
@@ -60,7 +69,7 @@
     </el-table-column>
     
     <!-- 百播放量：播放量/消耗*100 -->
-    <el-table-column width="110">
+    <el-table-column v-if="isColumnVisible('hundredPlayRate')" width="110">
       <template #header>
         <div class="header-with-tooltip">
           <span class="header-red">百播放量</span>
@@ -75,7 +84,7 @@
     </el-table-column>
     
     <!-- 转化成本 -->
-    <el-table-column width="100">
+    <el-table-column v-if="isColumnVisible('convertCost')" width="100">
       <template #header>
         <div class="header-with-tooltip">
           <span class="header-red">转化成本</span>
@@ -90,7 +99,7 @@
     </el-table-column>
     
     <!-- 百转发率：转发/播放量*100 -->
-    <el-table-column width="110">
+    <el-table-column v-if="isColumnVisible('hundredShareRate')" width="110">
       <template #header>
         <div class="header-with-tooltip">
           <span class="header-red">百转发率</span>
@@ -105,7 +114,7 @@
     </el-table-column>
     
     <!-- 点赞比：点赞/播放量×100 -->
-    <el-table-column width="100">
+    <el-table-column v-if="isColumnVisible('likeRate')" width="100">
       <template #header>
         <div class="header-with-tooltip">
           <span class="header-red">点赞比</span>
@@ -120,7 +129,7 @@
     </el-table-column>
     
     <!-- 转发比：转发/播放量×100 -->
-    <el-table-column width="100">
+    <el-table-column v-if="isColumnVisible('shareRate')" width="100">
       <template #header>
         <div class="header-with-tooltip">
           <span class="header-red">转发比</span>
@@ -135,7 +144,7 @@
     </el-table-column>
     
     <!-- 播放量 -->
-    <el-table-column width="100">
+    <el-table-column v-if="isColumnVisible('playCount')" width="100">
       <template #header>
         <span class="header-red">播放量</span>
       </template>
@@ -145,7 +154,7 @@
     </el-table-column>
     
     <!-- 点赞 -->
-    <el-table-column width="90">
+    <el-table-column v-if="isColumnVisible('likeCount')" width="90">
       <template #header>
         <span class="header-red">点赞</span>
       </template>
@@ -155,7 +164,7 @@
     </el-table-column>
     
     <!-- 转发 -->
-    <el-table-column width="90">
+    <el-table-column v-if="isColumnVisible('shareCount')" width="90">
       <template #header>
         <span class="header-red">转发</span>
       </template>
@@ -165,7 +174,7 @@
     </el-table-column>
     
     <!-- 转化 -->
-    <el-table-column width="90">
+    <el-table-column v-if="isColumnVisible('convertCount')" width="90">
       <template #header>
         <span class="header-red">转化</span>
       </template>
@@ -175,7 +184,7 @@
     </el-table-column>
     
     <!-- 5S完播率 -->
-    <el-table-column width="100">
+    <el-table-column v-if="isColumnVisible('fiveSecRate')" width="100">
       <template #header>
         <span class="header-red">5S完播率</span>
       </template>
@@ -185,7 +194,7 @@
     </el-table-column>
     
     <!-- 结束时间 -->
-    <el-table-column label="结束时间" width="160">
+    <el-table-column v-if="isColumnVisible('endTime')" label="结束时间" width="160">
       <template #default="{ row }">
         <span class="time-text">{{ formatDate(row.completedTime || row.orderEndTime || row.scheduledTime) }}</span>
       </template>
@@ -293,11 +302,15 @@ const props = withDefaults(defineProps<{
   showAccountColumn?: boolean
   showCancelButton?: boolean
   showRenewButton?: boolean
+  selectable?: boolean  // 新增：是否显示多选框
+  visibleColumns?: string[]  // 新增：可见列配置
 }>(), {
   loading: false,
   showAccountColumn: true,
   showCancelButton: true,
-  showRenewButton: true
+  showRenewButton: true,
+  selectable: false,
+  visibleColumns: () => []  // 默认全部显示
 })
 
 // Emits
@@ -307,7 +320,27 @@ const emit = defineEmits<{
   (e: 'delete', task: OrderTask): void
   (e: 'renew', task: OrderTask): void
   (e: 'reorder', task: OrderTask): void
+  (e: 'selectionChange', tasks: OrderTask[]): void  // 新增：选择变化事件
 }>()
+
+// 判断列是否可见
+const isColumnVisible = (columnKey: string) => {
+  // 如果未配置，默认全部显示
+  if (!props.visibleColumns || props.visibleColumns.length === 0) {
+    return true
+  }
+  return props.visibleColumns.includes(columnKey)
+}
+
+// 判断行是否可选（只有投放中的订单可以批量续费）
+const isSelectableRow = (row: OrderTask) => {
+  return isDelivering(row.status)
+}
+
+// 处理选择变化
+const handleSelectionChange = (selection: OrderTask[]) => {
+  emit('selectionChange', selection)
+}
 
 // 判断是否投放中（可续费）
 const isDelivering = (status?: string) => {

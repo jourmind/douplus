@@ -69,8 +69,12 @@ def get_task_page():
     
     db = SessionLocal()
     try:
-        # 构建查询条件
-        where_conditions = ["o.user_id = :user_id", "o.deleted = 0"]
+        # 构建查询条件（包含账号表JOIN，过滤已解绑账号）
+        where_conditions = [
+            "o.user_id = :user_id", 
+            "o.deleted = 0",
+            "a.deleted = 0"  # 新增：过滤已解绑的账号
+        ]
         params = {
             'user_id': user_id,
             'limit': page_size,
@@ -101,31 +105,99 @@ def get_task_page():
         
         where_clause = " AND ".join(where_conditions)
         
-        # 查询总数
-        count_sql = f"SELECT COUNT(*) FROM douplus_order o WHERE {where_clause}"
+        # 查询总数（JOIN账号表）
+        count_sql = f"""
+            SELECT COUNT(*) 
+            FROM douplus_order o
+            INNER JOIN douyin_account a ON o.account_id = a.id
+            WHERE {where_clause}
+        """
         total = db.execute(text(count_sql), params).fetchone()[0]
         
-        # 查询订单数据
-        order_mapping = {
-            'createTime': 'create_time',
-            'budget': 'budget',
-            'scheduledTime': 'order_create_time'
-        }
-        order_column = order_mapping.get(sort_field, 'create_time')
+        # 判断是否需要JOIN效果表进行排序
+        effect_sort_fields = ['playCount', 'actualCost', 'likeCount', 'shareCount', 'commentCount', 
+                              'followCount', 'dpTargetConvertCnt', 'costPerPlay', 'shareRate']
+        need_join_stats = sort_field in effect_sort_fields
+        
         order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        data_sql = f"""
-            SELECT 
-                o.id, o.user_id, o.account_id, o.item_id, o.order_id,
-                o.status, o.budget, o.duration, o.target_type,
-                o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
-                o.order_create_time, o.order_start_time, o.order_end_time,
-                o.create_time, o.update_time
-            FROM douplus_order o
-            WHERE {where_clause}
-            ORDER BY o.{order_column} {order_direction}
-            LIMIT :limit OFFSET :offset
-        """
+        if need_join_stats:
+            # 需要JOIN效果表进行排序
+            # 排序字段映射
+            # 注意：前端'playCount'在SortCascader中实际指百播放量（播放量/消耗*100），而不是播放量
+            
+            # 转化成本排序：空值处理根据排序方向决定
+            # DESC: 空值用NULL（自动排最后） 或者用负数
+            # ASC: 空值用NULL（自动排最前） 或者用大数
+            if sort_field == 'costPerPlay':
+                if sort_order.lower() == 'desc':
+                    # 降序：空值应该排最后，用负数或NULL
+                    cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE NULL END'
+                else:
+                    # 升序：空值应该排最后，用大数
+                    cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE 999999 END'
+            else:
+                cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE 0 END'
+            
+            stats_field_mapping = {
+                'playCount': 'CASE WHEN s.stat_cost > 0 THEN (s.total_play / s.stat_cost * 100) ELSE 0 END',  # 百播放量
+                'actualCost': 's.stat_cost',
+                'likeCount': 's.custom_like',
+                'shareCount': 's.dy_share',
+                'commentCount': 's.dy_comment',
+                'followCount': 's.dy_follow',
+                'dpTargetConvertCnt': 's.dp_target_convert_cnt',
+                'costPerPlay': cost_per_play_expr,  # 转化成本（动态处理空值）
+                'shareRate': 'CASE WHEN s.total_play > 0 THEN (s.dy_share / s.total_play * 100) ELSE 0 END'  # 百转发率
+            }
+            sort_column = stats_field_mapping.get(sort_field, 's.stat_cost')
+            
+            # LEFT JOIN效果表（取最新数据），INNER JOIN账号表（过滤已解绑）
+            data_sql = f"""
+                SELECT 
+                    o.id, o.user_id, o.account_id, o.item_id, o.order_id,
+                    o.status, o.budget, o.duration, o.target_type,
+                    o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
+                    o.order_create_time, o.order_start_time, o.order_end_time,
+                    o.create_time, o.update_time
+                FROM douplus_order o
+                INNER JOIN douyin_account a ON o.account_id = a.id
+                LEFT JOIN (
+                    SELECT s1.order_id, s1.stat_cost, s1.total_play, s1.custom_like, 
+                           s1.dy_share, s1.dy_comment, s1.dy_follow, s1.dp_target_convert_cnt
+                    FROM douplus_order_stats s1
+                    INNER JOIN (
+                        SELECT order_id, MAX(stat_time) as max_time
+                        FROM douplus_order_stats
+                        GROUP BY order_id
+                    ) s2 ON s1.order_id = s2.order_id AND s1.stat_time = s2.max_time
+                ) s ON o.order_id = s.order_id
+                WHERE {where_clause}
+                ORDER BY {sort_column} {order_direction}
+                LIMIT :limit OFFSET :offset
+            """
+        else:
+            # 按订单表字段排序（如创建时间、预算等）
+            order_mapping = {
+                'createTime': 'o.create_time',
+                'budget': 'o.budget',
+                'scheduledTime': 'o.order_create_time'
+            }
+            order_column = order_mapping.get(sort_field, 'o.create_time')
+            
+            data_sql = f"""
+                SELECT 
+                    o.id, o.user_id, o.account_id, o.item_id, o.order_id,
+                    o.status, o.budget, o.duration, o.target_type,
+                    o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
+                    o.order_create_time, o.order_start_time, o.order_end_time,
+                    o.create_time, o.update_time
+                FROM douplus_order o
+                INNER JOIN douyin_account a ON o.account_id = a.id
+                WHERE {where_clause}
+                ORDER BY {order_column} {order_direction}
+                LIMIT :limit OFFSET :offset
+            """
         
         results = db.execute(text(data_sql), params).fetchall()
         
@@ -169,8 +241,8 @@ def get_task_page():
                     'shareCount': int(row[5]) if row[5] else 0,
                     'followCount': int(row[6]) if row[6] else 0,
                     'dpTargetConvertCnt': int(row[7]) if row[7] else 0,
-                    'avgConvertCost': float(row[8]) if row[8] else 0,  # 订单维度的转化成本
-                    'avg5sRate': float(row[9]) if row[9] else 0,  # 订单维度的5S完播率
+                    'customConvertCost': float(row[8]) if row[8] else 0,  # 转化成本（前端期望customConvertCost）
+                    'avg5sRate': float(row[9]) if row[9] else 0,  # 5S完播率
                 }
         
         # 组装返回数据
@@ -246,62 +318,93 @@ def get_video_stats_by_account(account_id):
     
     db = SessionLocal()
     try:
-        # 时间筛选条件（基于订单创建时间）
+        # 首先验证账号是否存在且未解绑
+        account_check_sql = text("""
+            SELECT id FROM douyin_account 
+            WHERE id = :account_id AND user_id = :user_id AND deleted = 0
+        """)
+        account_exists = db.execute(account_check_sql, {
+            'account_id': account_id,
+            'user_id': user_id
+        }).fetchone()
+        
+        if not account_exists:
+            return error_response('账号不存在或已解绑', code=404)
+        
+        # 时间筛选条件（基于统计时间）
         time_filter = ""
         params = {'account_id': account_id, 'user_id': user_id, 'limit': page_size, 'offset': (page_num - 1) * page_size}
         
         if start_time:
-            time_filter = "AND o.order_create_time >= :start_time"
+            time_filter = "AND v.stat_time >= :start_time"
             params['start_time'] = start_time
         
-        # 排序字段映射
-        sort_mapping = {'cost': 'total_cost', 'playCount': 'total_play', 'likeCount': 'total_like', 
-                       'commentCount': 'total_comment', 'shareCount': 'total_share', 'convertCount': 'total_convert'}
+        # 排序字段映射（包含计算字段）
+        # 注意：前端'playCount'实际指的是百播放量，而不是播放量
+        sort_mapping = {
+            'cost': 'total_cost', 
+            'playCount': 'play_per_100_cost',      # 前端playCount = 百播放量
+            'likeCount': 'total_like', 
+            'commentCount': 'total_comment', 
+            'shareCount': 'total_share', 
+            'convertCount': 'total_convert',
+            'playPer100Cost': 'play_per_100_cost',  # 百播放量（备用）
+            'shareRate': 'share_per_100_play',      # 百转发率
+            'convertCost': 'avg_convert_cost',      # 转化成本
+            'costPerPlay': 'avg_convert_cost'       # 前端costPerPlay = 转化成本
+        }
         sort_column = sort_mapping.get(sort_by, 'total_cost')
         sort_dir = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        # 修复：按订单创建时间筛选，从订单表聚合视频维度数据
-        # MySQL 5.7兼容：使用子查询获取每个订单的最新效果数据
+        # 方案A：从预聚合表查询（5分钟粒度），按天聚合
+        # 优势：查询解耦，无JOIN，性能优异
         video_sql = text(f"""
             SELECT 
-                o.item_id,
+                v.item_id,
                 MAX(o.aweme_title) as title,
                 MAX(o.aweme_cover) as cover,
-                COUNT(DISTINCT o.id) as order_count,
-                SUM(o.budget) as total_budget,
-                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
-                SUM(COALESCE(s.total_play, 0)) as total_play,
-                SUM(COALESCE(s.custom_like, 0)) as total_like,
-                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
-                SUM(COALESCE(s.dy_share, 0)) as total_share,
-                SUM(COALESCE(s.dy_follow, 0)) as total_follow,
-                SUM(COALESCE(s.dp_target_convert_cnt, 0)) as total_convert
-            FROM douplus_order o
-            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
-            LEFT JOIN (
-                SELECT order_id, MAX(stat_time) as max_time
-                FROM douplus_order_stats
-                GROUP BY order_id
-            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
-            WHERE o.account_id = :account_id 
-              AND o.user_id = :user_id 
-              AND o.deleted = 0
-              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
+                COUNT(DISTINCT o.order_id) as order_count,
+                COALESCE(SUM(o.budget), 0) as total_budget,
+                COALESCE(SUM(v.total_cost), 0) as total_cost,
+                COALESCE(SUM(v.total_play), 0) as total_play,
+                COALESCE(SUM(v.total_like), 0) as total_like,
+                COALESCE(SUM(v.total_comment), 0) as total_comment,
+                COALESCE(SUM(v.total_share), 0) as total_share,
+                COALESCE(SUM(v.total_follow), 0) as total_follow,
+                COALESCE(SUM(v.total_convert), 0) as total_convert,
+                CASE 
+                    WHEN SUM(v.total_cost) > 0 
+                    THEN SUM(v.total_play) / SUM(v.total_cost) * 100
+                    ELSE 0 
+                END as play_per_100_cost,
+                CASE 
+                    WHEN SUM(v.total_play) > 0 
+                    THEN SUM(v.total_share) / SUM(v.total_play) * 100
+                    ELSE 0 
+                END as share_per_100_play,
+                CASE 
+                    WHEN SUM(v.total_convert) > 0 
+                    THEN SUM(v.total_cost) / SUM(v.total_convert)
+                    ELSE 0 
+                END as avg_convert_cost
+            FROM douplus_video_stats_agg v
+            INNER JOIN douplus_order o ON v.item_id = o.item_id AND o.account_id = v.account_id
+            WHERE v.account_id = :account_id 
+              AND v.user_id = :user_id
               {time_filter}
-            GROUP BY o.item_id
+            GROUP BY v.item_id
             ORDER BY {sort_column} {sort_dir}
             LIMIT :limit OFFSET :offset
         """)
         
         results = db.execute(video_sql, params).fetchall()
         
-        # 查询总数
+        # 查询总数（从预聚合表）
         count_sql = text(f"""
-            SELECT COUNT(DISTINCT o.item_id) 
-            FROM douplus_order o 
-            WHERE o.account_id = :account_id 
-              AND o.user_id = :user_id 
-              AND o.deleted = 0
+            SELECT COUNT(DISTINCT v.item_id) 
+            FROM douplus_video_stats_agg v
+            WHERE v.account_id = :account_id 
+              AND v.user_id = :user_id
               {time_filter}
         """)
         total = db.execute(count_sql, params).fetchone()[0]
@@ -348,64 +451,88 @@ def get_all_video_stats():
     
     db = SessionLocal()
     try:
-        # 筛选条件
+        # 筛选条件（包含账号过滤）
         time_filter = ""
-        account_filter = ""
+        account_filter_order = ""  # 用于主查询（有订单表JOIN）
+        account_filter_video = ""  # 用于COUNT查询（只有视频表）
         params = {'user_id': user_id, 'limit': page_size, 'offset': (page_num - 1) * page_size}
         
         # 如果指定了accountId，则筛选该账号的数据
         if account_id:
-            account_filter = "AND o.account_id = :account_id"
+            account_filter_order = "AND o.account_id = :account_id"
+            account_filter_video = "AND v.account_id = :account_id"
             params['account_id'] = int(account_id)
         
         if start_time:
-            time_filter = "AND o.order_create_time >= :start_time"
+            time_filter = "AND v.stat_time >= :start_time"
             params['start_time'] = start_time
         
-        # 排序字段映射
-        sort_mapping = {'cost': 'total_cost', 'playCount': 'total_play', 'likeCount': 'total_like', 
-                       'shareCount': 'total_share', 'convertCount': 'total_convert'}
+        # 排序字段映射（包含计算字段）
+        # 注意：前端'playCount'实际指的是百播放量，而不是播放量
+        sort_mapping = {
+            'cost': 'total_cost', 
+            'playCount': 'play_per_100_cost',      # 前端playCount = 百播放量
+            'likeCount': 'total_like', 
+            'shareCount': 'total_share', 
+            'convertCount': 'total_convert',
+            'playPer100Cost': 'play_per_100_cost',  # 百播放量（备用）
+            'shareRate': 'share_per_100_play',      # 百转发率
+            'convertCost': 'avg_convert_cost',      # 转化成本
+            'costPerPlay': 'avg_convert_cost'       # 前端costPerPlay = 转化成本
+        }
         sort_column = sort_mapping.get(sort_by, 'total_cost')
         sort_dir = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
-        # 从订单表聚合视频维度数据
+        # 从预聚合表查询（5分钟粒度），按天聚合
+        # 注意：使用COALESCE包裹SUM，确保无数据时返回0而不是NULL
         video_sql = text(f"""
             SELECT 
-                o.item_id,
+                v.item_id,
                 MAX(o.aweme_title) as title,
                 MAX(o.aweme_cover) as cover,
-                COUNT(DISTINCT o.id) as order_count,
-                SUM(COALESCE(s.stat_cost, 0)) as total_cost,
-                SUM(COALESCE(s.total_play, 0)) as total_play,
-                SUM(COALESCE(s.custom_like, 0)) as total_like,
-                SUM(COALESCE(s.dy_comment, 0)) as total_comment,
-                SUM(COALESCE(s.dy_share, 0)) as total_share
-            FROM douplus_order o
-            LEFT JOIN douplus_order_stats s ON o.order_id = s.order_id
-            LEFT JOIN (
-                SELECT order_id, MAX(stat_time) as max_time
-                FROM douplus_order_stats
-                GROUP BY order_id
-            ) s_max ON s.order_id = s_max.order_id AND s.stat_time = s_max.max_time
-            WHERE o.user_id = :user_id 
-              AND o.deleted = 0
-              AND (s.stat_time IS NULL OR s_max.max_time IS NOT NULL)
-              {account_filter}
+                COUNT(DISTINCT o.order_id) as order_count,
+                COALESCE(SUM(v.total_cost), 0) as total_cost,
+                COALESCE(SUM(v.total_play), 0) as total_play,
+                COALESCE(SUM(v.total_like), 0) as total_like,
+                COALESCE(SUM(v.total_comment), 0) as total_comment,
+                COALESCE(SUM(v.total_share), 0) as total_share,
+                CASE 
+                    WHEN SUM(v.total_cost) > 0 
+                    THEN SUM(v.total_play) / SUM(v.total_cost) * 100
+                    ELSE 0 
+                END as play_per_100_cost,
+                CASE 
+                    WHEN SUM(v.total_play) > 0 
+                    THEN SUM(v.total_share) / SUM(v.total_play) * 100
+                    ELSE 0 
+                END as share_per_100_play,
+                CASE 
+                    WHEN SUM(v.total_convert) > 0 
+                    THEN SUM(v.total_cost) / SUM(v.total_convert)
+                    ELSE 0 
+                END as avg_convert_cost
+            FROM douplus_video_stats_agg v
+            INNER JOIN douyin_account a ON v.account_id = a.id
+            INNER JOIN douplus_order o ON v.item_id = o.item_id AND v.account_id = o.account_id
+            WHERE v.user_id = :user_id 
+              AND a.deleted = 0
+              {account_filter_order}
               {time_filter}
-            GROUP BY o.item_id
+            GROUP BY v.item_id
             ORDER BY {sort_column} {sort_dir}
             LIMIT :limit OFFSET :offset
         """)
         
         results = db.execute(video_sql, params).fetchall()
         
-        # 查询总数
+        # 查询总数（从预聚合表，JOIN账号表过滤已解绑）
         count_sql = text(f"""
-            SELECT COUNT(DISTINCT o.item_id) 
-            FROM douplus_order o 
-            WHERE o.user_id = :user_id 
-              AND o.deleted = 0
-              {account_filter}
+            SELECT COUNT(DISTINCT v.item_id) 
+            FROM douplus_video_stats_agg v
+            INNER JOIN douyin_account a ON v.account_id = a.id
+            WHERE v.user_id = :user_id 
+              AND a.deleted = 0
+              {account_filter_video}
               {time_filter}
         """)
         total = db.execute(count_sql, params).fetchone()[0]
@@ -535,6 +662,51 @@ def get_task_detail(task_id):
         
     except Exception as e:
         logger.error(f"查询订单详情失败: {str(e)}")
+        return error_response(str(e))
+    finally:
+        db.close()
+
+
+@query_bp.route('/video/titles', methods=['GET'])
+@require_auth
+def get_video_titles():
+    """
+    获取视频标题列表（用于筛选器下拉选择）
+    
+    参数：
+    - accountId: 账号ID（可选）
+    """
+    user_id = request.user_id
+    account_id = request.args.get('accountId')
+    
+    db = SessionLocal()
+    try:
+        # 构建查询条件
+        where_conditions = ["o.user_id = :user_id", "o.deleted = 0", "o.aweme_title IS NOT NULL"]
+        params = {'user_id': user_id}
+        
+        if account_id:
+            where_conditions.append("o.account_id = :account_id")
+            params['account_id'] = int(account_id)
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # 查询不重复的视频标题
+        sql = text(f"""
+            SELECT DISTINCT o.aweme_title
+            FROM douplus_order o
+            WHERE {where_clause}
+            ORDER BY o.aweme_title
+            LIMIT 100
+        """)
+        
+        results = db.execute(sql, params).fetchall()
+        titles = [{'label': row[0], 'value': row[0]} for row in results]
+        
+        return success_response(titles)
+        
+    except Exception as e:
+        logger.error(f"查询视频标题失败: {str(e)}")
         return error_response(str(e))
     finally:
         db.close()
