@@ -55,7 +55,7 @@
                 :value="account.id"
               >
                 <div class="account-option">
-                  <el-avatar :size="20" :src="account.avatar">{{ account.nickname?.charAt(0) }}</el-avatar>
+                  <el-avatar :size="20" :src="convertToHttps(account.avatar)">{{ account.nickname?.charAt(0) }}</el-avatar>
                   <span>{{ account.nickname }}</span>
                   <el-tag v-if="account.status !== 1" type="danger" size="small">授权失效</el-tag>
                 </div>
@@ -77,7 +77,7 @@
                 @click="toggleVideoSelection(video)"
               >
                 <div class="video-thumb-wrapper">
-                  <img :src="video.coverUrl" class="video-thumb" />
+                  <img :src="convertToHttps(video.coverUrl)" class="video-thumb" />
                   <div class="video-duration">{{ formatDuration(video.duration) }}</div>
                   <div v-if="isVideoSelected(video)" class="video-check">
                     <el-icon><Check /></el-icon>
@@ -99,7 +99,7 @@
           <div v-if="selectedVideos.length > 0" class="selected-videos">
             <div class="selected-label">已选择 {{ selectedVideos.length }} 个视频：</div>
             <div v-for="(video, index) in selectedVideos" :key="video.id" class="video-card">
-              <img :src="video.coverUrl" class="video-cover" />
+              <img :src="convertToHttps(video.coverUrl)" class="video-cover" />
               <div class="video-info">
                 <div class="video-title">{{ video.title || '无标题' }}</div>
                 <div class="video-meta">
@@ -546,6 +546,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { convertToHttps } from '@/utils/url'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { 

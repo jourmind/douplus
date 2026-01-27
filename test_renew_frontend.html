@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>续费功能测试</title>
+</head>
+<body>
+    <h1>前端构建文件检查</h1>
+    <pre id="output"></pre>
+    
+    <script>
+        const output = document.getElementById('output');
+        
+        // 检查OrderListView构建文件
+        fetch('/assets/OrderListView-oEICxOxn.js')
+            .then(res => res.text())
+            .then(content => {
+                // 检查是否包含convertToHttps
+                if (content.includes('convertToHttps')) {
+                    output.textContent += '✅ OrderListView包含convertToHttps函数\n';
+                } else {
+                    output.textContent += '❌ OrderListView缺少convertToHttps函数\n';
+                }
+                
+                // 检查是否有未定义的V变量
+                const vMatches = content.match(/\bV\s*\(/g);
+                if (vMatches) {
+                    output.textContent += `⚠️  发现${vMatches.length}处可疑的V函数调用\n`;
+                } else {
+                    output.textContent += '✅ 没有发现V函数调用\n';
+                }
+                
+                // 检查图标导入
+                if (content.includes('VideoCamera')) {
+                    output.textContent += '✅ VideoCamera图标已包含\n';
+                } else {
+                    output.textContent += '❌ VideoCamera图标缺失\n';
+                }
+                
+                if (content.includes('Setting')) {
+                    output.textContent += '✅ Setting图标已包含\n';
+                } else {
+                    output.textContent += '❌ Setting图标缺失\n';
+                }
+            })
+            .catch(err => {
+                output.textContent += `❌ 加载失败: ${err.message}\n`;
+            });
+    </script>
+</body>
+</html>

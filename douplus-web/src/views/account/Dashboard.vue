@@ -21,7 +21,7 @@
     <div class="account-header">
       <div class="account-info-section">
         <div class="account-avatar-info">
-          <el-avatar :size="60" :src="account?.avatar">
+          <el-avatar :size="60" :src="convertToHttps(account?.avatar)">
             <span class="avatar-text">{{ getAvatarText(account?.remark || account?.nickname) }}</span>
           </el-avatar>
           <div class="account-basic">
@@ -112,7 +112,7 @@
           <div v-loading="videoStatsLoading" class="ranking-list">
             <div v-for="(video, index) in videoStats" :key="video.itemId" class="ranking-item">
               <div class="ranking-number">{{ index + 1 }}</div>
-              <img :src="video.cover || '/default-cover.jpg'" class="video-cover" @error="handleImageError" />
+              <img :src="convertToHttps(video.cover) || '/default-cover.jpg'" class="video-cover" @error="handleImageError" />
               <div class="video-info">
                 <div class="video-title">{{ video.title || '未知视频' }}</div>
                 <div class="video-stats">
@@ -170,6 +170,7 @@ import { getAccountStats, getVideoStatsByAccount } from '@/api/douplus'
 import type { DouyinAccount } from '@/api/types'
 import * as echarts from 'echarts'
 import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 import { OrderListView } from '@/components/order'
 
 const route = useRoute()

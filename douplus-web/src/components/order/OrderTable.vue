@@ -19,7 +19,7 @@
       <template #default="{ row }">
         <div class="video-cell">
           <el-image 
-            :src="row.videoCoverUrl || row.videoCover" 
+            :src="convertToHttps(row.videoCoverUrl || row.videoCover)" 
             class="video-cover"
             fit="cover"
           >
@@ -257,6 +257,7 @@
 
 <script setup lang="ts">
 import { VideoCamera, QuestionFilled } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 
 // Props
 interface OrderTask {

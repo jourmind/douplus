@@ -518,7 +518,7 @@ const handleBatchRenewSubmit = async (data: { tasks: any[], budget: number, dura
     }
     
     // TODO: 这里需要添加批量续费API
-    const response = await fetch('/api/douplus/order/batch-renew', {
+    const response = await fetch('/api/douplus/batch-renew', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -20,7 +20,7 @@
         <div class="order-list-title">订单列表</div>
         <div class="order-list-content">
           <div v-for="task in tasks" :key="task.id" class="order-item">
-            <el-image :src="task.videoCoverUrl || task.videoCover" class="order-cover" fit="cover">
+            <el-image :src="convertToHttps(task.videoCoverUrl || task.videoCover)" class="order-cover" fit="cover">
               <template #error>
                 <div class="cover-placeholder">
                   <el-icon><VideoCamera /></el-icon>
@@ -55,8 +55,8 @@
             v-if="customBudget" 
             v-model="form.budget" 
             :min="100" 
-            :max="50000" 
-            :step="100"
+            :max="5000000" 
+            :step="10"
             style="width: 150px; margin-top: 10px;"
           >
             <template #suffix>元</template>
@@ -78,11 +78,12 @@
           <el-input-number 
             v-if="customDuration" 
             v-model="form.duration" 
-            :min="1" 
-            :max="168" 
+            :min="2" 
+            :max="720" 
+            :step="12"
             style="width: 150px; margin-top: 10px;"
           >
-            <template #suffix>小时</template>
+            <template #suffix>小时（12的倍数）</template>
           </el-input-number>
         </el-form-item>
         
@@ -108,6 +109,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { VideoCamera } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 
 interface Task {
   id: number
@@ -147,16 +149,18 @@ const form = ref({
   duration: 24
 })
 
-// 预设金额选项
+// 预设金额选项（抖音开放平台API官方要求最低100元）
 const BUDGET_OPTIONS = [
   { label: '¥100', value: 100 },
   { label: '¥200', value: 200 },
   { label: '¥500', value: 500 },
+  { label: '¥1000', value: 1000 },
   { label: '自定义', value: 0 }
 ]
 
-// 预设时长选项
+// 预设时长选项（抖音API规则：0、2、6、12、24或12的倍数，最大720小时）
 const DURATION_OPTIONS = [
+  { label: '6小时', value: 6 },
   { label: '12小时', value: 12 },
   { label: '24小时', value: 24 },
   { label: '48小时', value: 48 },
@@ -183,7 +187,7 @@ const selectBudget = (value: number) => {
 const selectDuration = (value: number) => {
   if (value === 0) {
     customDuration.value = true
-    form.value.duration = 24
+    form.value.duration = 2
   } else {
     customDuration.value = false
     form.value.duration = value

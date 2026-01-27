@@ -26,14 +26,21 @@ logger = logging.getLogger(__name__)
 
 @account_bp.route('/accounts', methods=['GET'])
 @account_bp.route('/account/list', methods=['GET'])  # 前端兼容路由
+@account_bp.route('/account/page', methods=['GET'])  # 分页接口
 @require_auth
 def get_accounts():
     """
-    获取账号列表
+    获取账号列表（支持分页）
+    
+    参数：
+    - pageNum: 页码（可选，默认返回全部）
+    - pageSize: 每页数量（可选，默认返回全部）
     
     返回用户所有账号的基本信息
     """
     user_id = request.user_id
+    page_num = request.args.get('pageNum', type=int)
+    page_size = request.args.get('pageSize', type=int)
     
     db = SessionLocal()
     try:
@@ -82,6 +89,21 @@ def get_accounts():
                 'tokenExpiringSoon': token_expiring_soon
             }
             accounts.append(account)
+        
+        # 如果有分页参数，返回分页格式
+        if page_num is not None and page_size is not None:
+            total = len(accounts)
+            start = (page_num - 1) * page_size
+            end = start + page_size
+            paged_accounts = accounts[start:end]
+            
+            return success_response({
+                'list': paged_accounts,
+                'total': total,
+                'pageNum': page_num,
+                'pageSize': page_size,
+                'pages': (total + page_size - 1) // page_size if page_size > 0 else 0
+            })
         
         return success_response(accounts)
         

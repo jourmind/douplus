@@ -109,9 +109,18 @@ class StatsSyncTask(Task):
             stats_data: 效果数据
             stat_time: 统计时间
         """
+        # item_id必填，如果API没返回就从订单表查询
+        item_id = stats_data.get("item_id")
+        if not item_id:
+            order = db.query(DouplusOrder).filter_by(order_id=stats_data["order_id"]).first()
+            if order:
+                item_id = order.item_id
+            else:
+                item_id = ''  # 兜底值
+        
         values = {
             "order_id": stats_data["order_id"],
-            "item_id": stats_data["item_id"],
+            "item_id": item_id,
             "stat_time": stat_time,
             "stat_cost": stats_data.get("stat_cost", 0),
             "total_play": stats_data.get("total_play", 0),

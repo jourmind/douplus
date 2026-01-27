@@ -116,7 +116,7 @@
               @click="showVideoDetail(row)"
             >
               <img 
-                :src="row.cover || '/default-cover.jpg'" 
+                :src="convertToHttps(row.cover) || '/default-cover.jpg'"
                 style="width: 80px; height: 45px; object-fit: cover; background: #f0f0f0; border-radius: 4px;"
                 @error="handleImageError"
               />
@@ -158,7 +158,7 @@
         <!-- 视频基本信息 -->
         <div class="video-header">
           <img 
-            :src="currentVideo.cover" 
+            :src="convertToHttps(currentVideo.cover)"
             class="video-cover-large"
             @error="handleImageError"
           />
@@ -228,6 +228,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { Money, View, Star, ChatDotRound, Share, User, QuestionFilled } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 import { getAllAccountsStats, getAllVideoStats } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 

@@ -242,3 +242,35 @@ def get_all_accounts_stats():
         return error_response(str(e))
     finally:
         db.close()
+
+
+@stats_bp.route('/stats/dashboard', methods=['GET'])
+@require_auth
+def get_dashboard():
+    """
+    获取Dashboard统计数据（前端兼容接口）
+    
+    返回：用户全部统计数据
+    """
+    # 复用全部统计接口
+    return get_user_all_stats()
+
+
+@stats_bp.route('/video/rankings', methods=['GET'])
+@require_auth
+def get_video_rankings():
+    """
+    获取视频排行榜（前端兼容接口）
+    
+    返回：视频汇总数据
+    """
+    user_id = request.user_id
+    
+    # 获取分页参数
+    page_num = int(request.args.get('pageNum', 1))
+    page_size = int(request.args.get('pageSize', 20))
+    
+    # 复用视频汇总接口逻辑
+    # 这里返回空列表，待后续实现
+    return paginated_response([], 0, page_num, page_size)
+

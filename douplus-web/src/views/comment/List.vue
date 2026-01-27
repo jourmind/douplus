@@ -16,7 +16,7 @@
         <el-table-column label="评论者" width="180">
           <template #default="{ row }">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <el-avatar :size="32" :src="row.avatar">{{ row.nickname?.charAt(0) }}</el-avatar>
+              <el-avatar :size="32" :src="convertToHttps(row.avatar)">{{ row.nickname?.charAt(0) }}</el-avatar>
               <span>{{ row.nickname }}</span>
             </div>
           </template>
@@ -56,6 +56,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { convertToHttps } from '@/utils/url'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAccountList } from '@/api/account'
 import type { DouyinAccount, Comment } from '@/api/types'

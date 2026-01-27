@@ -44,6 +44,17 @@ class DouyinClient:
             "Content-Type": "application/json"
         }
         
+        # 处理GET请求的params参数：嵌套对象需要JSON序列化
+        if method.upper() == "GET" and "params" in kwargs:
+            import json
+            from six import string_types
+            params = kwargs.pop("params")
+            # 将非字符串的值（如dict、list）转为JSON字符串
+            kwargs["params"] = {
+                k: v if isinstance(v, string_types) else json.dumps(v) 
+                for k, v in params.items()
+            }
+        
         try:
             response = self.client.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
@@ -124,25 +135,35 @@ class DouyinClient:
         """
         endpoint = "/douplus/order/report/"
         
-        json_data = {
-            "aweme_sec_uid": aweme_sec_uid
+        # 根据官方文档，使用GET方法，参数通过query string传递
+        params = {
+            "aweme_sec_uid": aweme_sec_uid,
+            "group_by": ["GROUP_BY_AD_ID"]  # 按订单分组
         }
         
+        # 时间范围
+        if begin_time and end_time:
+            params["stat_time"] = {
+                "begin_time": begin_time,
+                "end_time": end_time
+            }
+        
+        # 订单ID过滤
         if order_ids:
-            json_data["order_ids"] = order_ids
-        if begin_time:
-            json_data["begin_time"] = begin_time
-        if end_time:
-            json_data["end_time"] = end_time
+            params["filter"] = {
+                "order_ids": [int(oid) for oid in order_ids]
+            }
         
         logger.info(f"调用效果报告API: aweme_sec_uid={aweme_sec_uid}, "
-                   f"order_count={len(order_ids) if order_ids else 'all'}")
+                   f"order_count={len(order_ids) if order_ids else 'all'}, "
+                   f"time_range={begin_time}~{end_time}")
         
-        data = self._request("POST", endpoint, json=json_data)
+        data = self._request("GET", endpoint, params=params)
         
         # 解析返回数据
         result = {}
-        for item in data.get("data", []):
+        # 注意：_request方法已经返回了data["data"]，所以这里直接获取order_metrics
+        for item in data.get("order_metrics", []):
             dimension = item.get("dimension_data", {})
             metrics = item.get("metrics_data", {})
             
@@ -205,7 +226,7 @@ class DouyinClient:
             "renewal_delivery_hour": renewal_delivery_hour
         }
         
-        logger.info(f"调用续费API: task_id={task_id}, budget={renewal_budget/100}元, hour={renewal_delivery_hour}")
+        logger.info(f"调用续费API: task_id={task_id}, budget={renewal_budget/100}元, hour={renewal_delivery_hour}, aweme_sec_uid={aweme_sec_uid}")
         
         try:
             data = self._request("POST", endpoint, json=json_data)

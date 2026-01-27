@@ -31,7 +31,7 @@ def renew_order():
     续费DOU+订单（追加预算和时长）
     
     请求参数：
-    - orderId: 订单内部ID
+    - orderId: 抖音订单ID（order_id字段）
     - budget: 追加预算（元）
     - duration: 延长时长（小时）
     - investPassword: 投放密码
@@ -64,17 +64,21 @@ def renew_order():
     if budget <= 0:
         return error_response('追加预算必须大于0', code=400)
     
-    # 预算范围验证（100元-5000元，10的倍数）
-    if budget < 100 or budget > 5000:
-        return error_response('追加预算范围：100-5000元', code=400)
+    # 预算范围验证（100元-5000000元，10的倍数）
+    # 根据抖音开放平台API官方文档：10,000-500,000,000分
+    if budget < 100 or budget > 5000000:
+        return error_response('追加预算范围：100-5000000元（抖音API要求）', code=400)
     
     if int(budget) % 10 != 0:
         return error_response('追加预算必须是10的倍数', code=400)
     
-    # 时长验证
-    valid_durations = [0, 2, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168]  # 最多7天
-    if duration not in valid_durations:
-        return error_response(f'延长时长必须是以下值之一：{valid_durations}', code=400)
+    # 时长验证（根据抖音API官方文档：0、2、6、12、24或12的倍数，最大720小时）
+    if duration < 0 or duration > 720:
+        return error_response('延长时长范围：0-720小时', code=400)
+    
+    # 允许的时长：0、2、6、12、24，或12的倍数
+    if duration not in [0, 2, 6] and duration % 12 != 0:
+        return error_response('延长时长必须是0、2、6、12、24或12的倍数', code=400)
     
     db = SessionLocal()
     try:
@@ -83,7 +87,7 @@ def renew_order():
             SELECT o.id, o.order_id, o.account_id, o.status, a.aweme_sec_uid, a.access_token
             FROM douplus_order o
             INNER JOIN douyin_account a ON o.account_id = a.id
-            WHERE o.id = :order_id AND o.user_id = :user_id AND o.deleted = 0
+            WHERE o.order_id = :order_id AND o.user_id = :user_id AND o.deleted = 0
         """)
         
         order = db.execute(order_sql, {
@@ -94,7 +98,36 @@ def renew_order():
         if not order:
             return error_response('订单不存在或无权限', code=404)
         
-        order_internal_id, task_id, account_id, status, aweme_sec_uid, access_token = order
+        order_internal_id, db_order_id, account_id, status, aweme_sec_uid, token_encrypted = order
+        
+        # 解密Access Token
+        access_token = decrypt_access_token(token_encrypted)
+        
+        # ⚠️ 重要：从抖音API查询订单，获取真正的task_id
+        # 数据库存储的是order_id，但续费API需要task_id
+        client = DouyinClient(access_token=access_token)
+        try:
+            order_list = client.get_order_list(
+                aweme_sec_uid=aweme_sec_uid,
+                page=1,
+                page_size=50
+            )
+            
+            # 查找匹配的订单
+            task_id = None
+            for order_data in order_list:
+                if order_data.get("order", {}).get("order_id") == int(db_order_id):
+                    task_id = str(order_data.get("order", {}).get("task_id"))
+                    break
+            
+            if not task_id:
+                return error_response('无法获取订单task_id，请重新同步订单数据', code=500)
+                
+        except Exception as e:
+            logger.error(f"查询订单task_id失败: {e}")
+            return error_response(f'查询订单信息失败：{str(e)}', code=500)
+        finally:
+            client.close()
         
         # 2. 验证订单状态（只有投放中的订单可以续费）
         if status not in ['DELIVERING', 'RUNNING']:
@@ -147,7 +180,33 @@ def renew_order():
             
         except DouyinAPIError as e:
             logger.error(f"DOU+续费API调用失败: {e}")
-            return error_response(f'续费失败：{str(e)}', code=500)
+            # 特殊处理：抖音API要求最低100元的错误
+            error_msg = str(e)
+            if 'must be at least 10000' in error_msg:
+                return error_response(
+                    '续费失败：抖音开放平台API要求续费金额最低100元。'
+                    '如需小额续费（10-90元），请直接到抖音后台操作。',
+                    code=400
+                )
+            # 特殊处理：订单不存在或已结束
+            if 'record not found' in error_msg:
+                return error_response(
+                    '续费失败：订单不存在或已结束。请刷新页面后重试，或检查订单状态。',
+                    code=404
+                )
+            # 特殊处理：时长超过30天
+            if 'deliverySeconds over 30 days' in error_msg or 'over 30 days' in error_msg:
+                return error_response(
+                    '续费失败：延长时长超过30天限制。单次续费最多延长720小时（30天）。',
+                    code=400
+                )
+            # 特殊处理：服务器内部错误
+            if 'code=50000' in error_msg or '服务内部错误' in error_msg:
+                return error_response(
+                    '续费失败：抖音服务器暂时异常，请稍后重试。',
+                    code=503
+                )
+            return error_response(f'续费失败：{error_msg}', code=500)
         finally:
             client.close()
             
@@ -200,7 +259,7 @@ def batch_renew_orders():
     try:
         # 2. 获取投放密码
         password_sql = text("""
-            SELECT invest_password_encrypted FROM sys_user 
+            SELECT invest_password FROM sys_user 
             WHERE id = :user_id
         """)
         password_result = db.execute(password_sql, {'user_id': user_id}).fetchone()
@@ -213,17 +272,22 @@ def batch_renew_orders():
             
             # 验证投放密码
             if invest_password:
-                from app.utils.crypto import hash_password
-                input_hash = hash_password(invest_password)
-                if input_hash != stored_password:
-                    return error_response('投放密码错误', code=401)
+                # 尝试解密后比对
+                try:
+                    decrypted_password = decrypt_access_token(stored_password)
+                    if invest_password != decrypted_password:
+                        return error_response('投放密码错误', code=401)
+                except:
+                    # 解密失败，直接比对
+                    if invest_password != stored_password:
+                        return error_response('投放密码错误', code=401)
         
         # 3. 遍历处理每个订单
         for order_id in order_ids:
             try:
                 # 3.1 查询订单信息（需要aweme_sec_uid）
                 order_sql = text("""
-                    SELECT o.order_id, o.status, a.open_id, a.access_token_encrypted, a.advertiser_id, a.aweme_sec_uid
+                    SELECT o.order_id, o.status, a.open_id, a.access_token, a.advertiser_id, a.aweme_sec_uid
                     FROM douplus_order o
                     JOIN douyin_account a ON o.account_id = a.id
                     WHERE o.order_id = :order_id AND o.user_id = :user_id AND o.deleted = 0
@@ -265,12 +329,7 @@ def batch_renew_orders():
                 access_token = decrypt_access_token(token_encrypted)
                 
                 # 3.5 调用抖音DOU+续费API
-                client = DouyinClient(
-                    app_id=None,  # 从环境变量读取
-                    app_secret=None,
-                    access_token=access_token,
-                    open_id=open_id
-                )
+                client = DouyinClient(access_token)
                 
                 client.advertiser_id = advertiser_id
                 
@@ -296,10 +355,18 @@ def batch_renew_orders():
                 
             except DouyinAPIError as e:
                 logger.error(f"订单{order_id}续费失败: {e}")
+                # 特殊处理：抖音API各种错误
+                error_msg = str(e)
+                if 'must be at least 10000' in error_msg:
+                    error_msg = '抖音API要求最低100元'
+                elif 'record not found' in error_msg:
+                    error_msg = '订单不存在或已结束'
+                elif 'code=50000' in error_msg or '服务内部错误' in error_msg:
+                    error_msg = '抖音服务器暂时异常，请稍后重试'
                 details.append({
                     'orderId': order_id,
                     'success': False,
-                    'message': f'续费失败：{str(e)}'
+                    'message': f'续费失败：{error_msg}'
                 })
                 failed_count += 1
             except Exception as e:

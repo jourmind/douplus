@@ -45,7 +45,7 @@
         <el-table-column label="抖音号信息" min-width="280">
           <template #default="{ row }">
             <div class="account-info">
-              <el-avatar :size="50" :src="row.avatar">
+              <el-avatar :size="50" :src="convertToHttps(row.avatar)">
                 <span class="avatar-text">{{ getAvatarText(row.remark || row.nickname) }}</span>
               </el-avatar>
               <div class="account-detail">
@@ -235,6 +235,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, QuestionFilled } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 import { getAccountList, deleteAccount, getOAuthUrl, updateAccountRemark, checkAccountWhitelist } from '@/api/account'
 import type { DouyinAccount } from '@/api/types'
 

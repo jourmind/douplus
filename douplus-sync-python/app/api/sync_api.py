@@ -292,6 +292,7 @@ def get_sync_history():
 
 
 @sync_bp.route('/task/latest-status', methods=['GET'])
+@sync_bp.route('/sync/status', methods=['GET'])  # 前端兼容路由
 @require_auth
 def get_latest_sync_status():
     """

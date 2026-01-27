@@ -90,7 +90,7 @@
     <!-- 续费对话框 -->
     <RenewDialog 
       v-model="renewVisible"
-      :task="renewTask"
+      :task="currentRenewTask"
       :mode="renewMode"
       @submit="confirmRenewOrReorder"
     />
@@ -158,7 +158,7 @@ const members = ref<MemberOption[]>([])
 
 // 续费相关
 const renewVisible = ref(false)
-const renewTask = ref<any>(null)
+const currentRenewTask = ref<any>(null)
 const renewMode = ref<'renew' | 'reorder'>('renew')
 
 // 批量续费相关
@@ -368,14 +368,14 @@ const deleteTask = async (task: any) => {
 
 // 续费 - 打开弹窗
 const handleRenew = (task: any) => {
-  renewTask.value = task
+  currentRenewTask.value = task
   renewMode.value = 'renew'
   renewVisible.value = true
 }
 
 // 再次下单 - 打开弹窗
 const handleReorder = (task: any) => {
-  renewTask.value = task
+  currentRenewTask.value = task
   renewMode.value = 'reorder'
   renewVisible.value = true
 }
@@ -442,7 +442,7 @@ const handleBatchRenewSubmit = async (data: { tasks: any[], budget: number, dura
       return
     }
     
-    const response = await fetch('/api/douplus/order/batch-renew', {
+    const response = await fetch('/api/douplus/batch-renew', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

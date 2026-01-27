@@ -10,7 +10,7 @@
       <!-- 订单信息摘要 -->
       <div class="order-summary">
         <div class="video-preview">
-          <el-image :src="task?.videoCoverUrl || task?.videoCover" class="video-cover" fit="cover">
+          <el-image :src="convertToHttps(task?.videoCoverUrl || task?.videoCover)" class="video-cover" fit="cover">
             <template #error>
               <div class="video-placeholder">
                 <el-icon><VideoCamera /></el-icon>
@@ -54,8 +54,8 @@
             v-if="customBudget" 
             v-model="form.budget" 
             :min="100" 
-            :max="50000" 
-            :step="100"
+            :max="5000000" 
+            :step="10"
             style="width: 150px; margin-top: 10px;"
           />
         </el-form-item>
@@ -74,13 +74,13 @@
           </div>
           <div v-if="customDuration" class="custom-duration-row">
             <el-input-number 
-              v-model="form.durationDays" 
-              :min="1" 
-              :max="7" 
+              v-model="form.duration" 
+              :min="2" 
+              :max="720" 
+              :step="12"
               style="width: 120px; margin-top: 10px;"
-              @change="onDurationDaysChange"
             />
-            <span class="duration-unit">天</span>
+            <span class="duration-unit">小时（12的倍数，最大720小时）</span>
           </div>
         </el-form-item>
         
@@ -115,19 +115,6 @@
           </div>
         </el-form-item>
         
-        <!-- 投放笔数 -->
-        <el-form-item label="投放笔数">
-          <div class="count-input">
-            <el-input-number 
-              v-model="form.count" 
-              :min="1" 
-              :max="100"
-              controls-position="right"
-            />
-            <span class="count-hint">笔（将创建{{ form.count }}笔相同订单）</span>
-          </div>
-        </el-form-item>
-        
         <!-- 投放密码 -->
         <el-form-item label="投放密码">
           <el-input
@@ -141,17 +128,9 @@
         
         <!-- 费用预估 -->
         <div class="cost-summary">
-          <div class="cost-row">
-            <span>单笔金额</span>
-            <span>¥{{ form.budget }}</span>
-          </div>
-          <div class="cost-row">
-            <span>投放笔数</span>
-            <span>× {{ form.count }}</span>
-          </div>
           <div class="cost-row total">
-            <span>预计总金额</span>
-            <span class="total-value">¥{{ totalAmount }}</span>
+            <span>预计金额</span>
+            <span class="total-value">¥{{ form.budget }}</span>
           </div>
         </div>
       </el-form>
@@ -170,8 +149,9 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { VideoCamera } from '@element-plus/icons-vue'
+import { convertToHttps } from '@/utils/url'
 
-// 预算选项
+// 预算选项（抖音开放平台API官方要求最低100元）
 const BUDGET_OPTIONS = [
   { label: '¥100', value: 100 },
   { label: '¥200', value: 200 },
@@ -180,8 +160,9 @@ const BUDGET_OPTIONS = [
   { label: '自定义', value: 0 }
 ]
 
-// 时长选项
+// 时长选项（抖音API规则：0、2、6、12、24或12的倍数，最大720小时）
 const DURATION_OPTIONS = [
+  { label: '2小时', value: 2 },
   { label: '6小时', value: 6 },
   { label: '12小时', value: 12 },
   { label: '24小时', value: 24 },
@@ -216,11 +197,10 @@ const props = defineProps<{
 // Emits
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'confirm', data: { 
+  (e: 'submit', data: { 
     task: OrderTask, 
     budget: number,
     duration: number,
-    count: number, 
     investPassword: string,
     customTimeEnabled?: boolean,
     fixedTimeStart?: number,
@@ -235,8 +215,6 @@ const customDuration = ref(false)
 const form = reactive({
   budget: 100,
   duration: 6,
-  durationDays: 2,
-  count: 1,
   investPassword: '',
   customTimeEnabled: false,
   fixedTimeStart: 8,
@@ -254,14 +232,9 @@ const dialogTitle = computed(() => {
   return props.mode === 'renew' ? '续费投放' : '再次下单'
 })
 
-// 计算属性 - 总金额
-const totalAmount = computed(() => {
-  return (form.budget * form.count).toFixed(2)
-})
-
 // 是否可启用自定义时段
 const canEnableCustomTime = computed(() => {
-  return customDuration.value && form.durationDays >= 2
+  return customDuration.value && form.duration >= 48
 })
 
 // 监听弹窗打开，重置表单
@@ -270,7 +243,6 @@ watch(() => props.modelValue, (val) => {
     // 使用原订单的预算和时长作为默认值
     form.budget = props.task.budget || 100
     form.duration = props.task.duration || 24
-    form.count = 1
     form.investPassword = ''
     form.customTimeEnabled = false
     form.fixedTimeStart = 8
@@ -278,13 +250,7 @@ watch(() => props.modelValue, (val) => {
     
     // 检查是否匹配预设选项
     customBudget.value = !BUDGET_OPTIONS.some(o => o.value === form.budget && o.value !== 0)
-    
-    if (form.duration > 24) {
-      customDuration.value = true
-      form.durationDays = Math.ceil(form.duration / 24)
-    } else {
-      customDuration.value = !DURATION_OPTIONS.some(o => o.value === form.duration && o.value !== 0)
-    }
+    customDuration.value = !DURATION_OPTIONS.some(o => o.value === form.duration && o.value !== 0)
   }
 })
 
@@ -292,7 +258,7 @@ watch(() => props.modelValue, (val) => {
 const selectBudget = (value: number) => {
   if (value === 0) {
     customBudget.value = true
-    form.budget = 100
+    form.budget = 10
   } else {
     customBudget.value = false
     form.budget = value
@@ -303,19 +269,10 @@ const selectBudget = (value: number) => {
 const selectDuration = (value: number) => {
   if (value === 0) {
     customDuration.value = true
-    form.durationDays = 2
-    form.duration = 48
+    form.duration = 2
   } else {
     customDuration.value = false
     form.duration = value
-    form.customTimeEnabled = false
-  }
-}
-
-// 自定义天数变化
-const onDurationDaysChange = (days: number) => {
-  form.duration = days * 24
-  if (days < 2) {
     form.customTimeEnabled = false
   }
 }
@@ -334,11 +291,10 @@ const handleConfirm = () => {
     return
   }
   
-  emit('confirm', {
+  emit('submit', {
     task: props.task,
     budget: form.budget,
     duration: form.duration,
-    count: form.count,
     investPassword: form.investPassword,
     customTimeEnabled: form.customTimeEnabled,
     fixedTimeStart: form.fixedTimeStart,

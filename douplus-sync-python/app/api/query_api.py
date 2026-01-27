@@ -122,7 +122,7 @@ def get_task_page():
         order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
         if need_join_stats:
-            # 需要JOIN效果表进行排序
+            # 需要JOIN预聚合表进行排序（按视频维度）
             # 排序字段映射
             # 注意：前端'playCount'在SortCascader中实际指百播放量（播放量/消耗*100），而不是播放量
             
@@ -132,27 +132,27 @@ def get_task_page():
             if sort_field == 'costPerPlay':
                 if sort_order.lower() == 'desc':
                     # 降序：空值应该排最后，用负数或NULL
-                    cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE NULL END'
+                    cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE NULL END'
                 else:
                     # 升序：空值应该排最后，用大数
-                    cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE 999999 END'
+                    cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE 999999 END'
             else:
-                cost_per_play_expr = 'CASE WHEN s.dp_target_convert_cnt > 0 THEN s.stat_cost / s.dp_target_convert_cnt ELSE 0 END'
+                cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE 0 END'
             
             stats_field_mapping = {
-                'playCount': 'CASE WHEN s.stat_cost > 0 THEN (s.total_play / s.stat_cost * 100) ELSE 0 END',  # 百播放量
-                'actualCost': 's.stat_cost',
-                'likeCount': 's.custom_like',
-                'shareCount': 's.dy_share',
-                'commentCount': 's.dy_comment',
-                'followCount': 's.dy_follow',
-                'dpTargetConvertCnt': 's.dp_target_convert_cnt',
+                'playCount': 'CASE WHEN v.total_cost > 0 THEN (v.total_play / v.total_cost * 100) ELSE 0 END',  # 百播放量
+                'actualCost': 'v.total_cost',
+                'likeCount': 'v.total_like',
+                'shareCount': 'v.total_share',
+                'commentCount': 'v.total_comment',
+                'followCount': 'v.total_follow',
+                'dpTargetConvertCnt': 'v.total_convert',
                 'costPerPlay': cost_per_play_expr,  # 转化成本（动态处理空值）
-                'shareRate': 'CASE WHEN s.total_play > 0 THEN (s.dy_share / s.total_play * 100) ELSE 0 END'  # 百转发率
+                'shareRate': 'CASE WHEN v.total_play > 0 THEN (v.total_share / v.total_play * 100) ELSE 0 END'  # 百转发率
             }
-            sort_column = stats_field_mapping.get(sort_field, 's.stat_cost')
+            sort_column = stats_field_mapping.get(sort_field, 'v.total_cost')
             
-            # LEFT JOIN效果表（取最新数据），INNER JOIN账号表（过滤已解绑）
+            # LEFT JOIN预聚合表（取最新数据），INNER JOIN账号表（过滤已解绑）
             data_sql = f"""
                 SELECT 
                     o.id, o.user_id, o.account_id, o.item_id, o.order_id,
@@ -163,15 +163,15 @@ def get_task_page():
                 FROM douplus_order o
                 INNER JOIN douyin_account a ON o.account_id = a.id
                 LEFT JOIN (
-                    SELECT s1.order_id, s1.stat_cost, s1.total_play, s1.custom_like, 
-                           s1.dy_share, s1.dy_comment, s1.dy_follow, s1.dp_target_convert_cnt
-                    FROM douplus_order_stats s1
+                    SELECT v1.item_id, v1.total_cost, v1.total_play, v1.total_like, 
+                           v1.total_share, v1.total_comment, v1.total_follow, v1.total_convert
+                    FROM douplus_video_stats_agg v1
                     INNER JOIN (
-                        SELECT order_id, MAX(stat_time) as max_time
-                        FROM douplus_order_stats
-                        GROUP BY order_id
-                    ) s2 ON s1.order_id = s2.order_id AND s1.stat_time = s2.max_time
-                ) s ON o.order_id = s.order_id
+                        SELECT item_id, MAX(stat_time) as max_time
+                        FROM douplus_video_stats_agg
+                        GROUP BY item_id
+                    ) v2 ON v1.item_id = v2.item_id AND v1.stat_time = v2.max_time
+                ) v ON o.item_id = v.item_id
                 WHERE {where_clause}
                 ORDER BY {sort_column} {order_direction}
                 LIMIT :limit OFFSET :offset
@@ -201,39 +201,39 @@ def get_task_page():
         
         results = db.execute(text(data_sql), params).fetchall()
         
-        # 获取效果数据（从订单效果明细表，按order_id维度）
-        order_ids = [row[4] for row in results if row[4]]  # order_id字段
-        order_stats_map = {}
+        # 获取效果数据（从视频预聚合表，按item_id维度）
+        item_ids = [row[3] for row in results if row[3]]  # item_id字段
+        video_stats_map = {}
         
-        if order_ids:
-            # 查询每个订单的最新效果数据（优化：使用JOIN替代子查询）
+        if item_ids:
+            # 查询视频维度的最新效果数据（使用预聚合表）
             stats_sql = text("""
                 SELECT 
-                    s.order_id, 
-                    s.stat_cost, 
-                    s.total_play, 
-                    s.custom_like, 
-                    s.dy_comment, 
-                    s.dy_share, 
-                    s.dy_follow, 
-                    s.dp_target_convert_cnt,
-                    s.custom_convert_cost,
-                    s.play_duration_5s_rank
-                FROM douplus_order_stats s
+                    v.item_id,
+                    v.total_cost,
+                    v.total_play,
+                    v.total_like,
+                    v.total_comment,
+                    v.total_share,
+                    v.total_follow,
+                    v.total_convert,
+                    v.avg_convert_cost,
+                    v.avg_5s_rank
+                FROM douplus_video_stats_agg v
                 INNER JOIN (
-                    SELECT order_id, MAX(stat_time) as max_time
-                    FROM douplus_order_stats
-                    WHERE order_id IN :order_ids
-                    GROUP BY order_id
-                ) latest ON s.order_id = latest.order_id AND s.stat_time = latest.max_time
+                    SELECT item_id, MAX(stat_time) as max_time
+                    FROM douplus_video_stats_agg
+                    WHERE item_id IN :item_ids
+                    GROUP BY item_id
+                ) latest ON v.item_id = latest.item_id AND v.stat_time = latest.max_time
             """)
             
             stats_results = db.execute(stats_sql, {
-                'order_ids': tuple(order_ids)
+                'item_ids': tuple(item_ids)
             }).fetchall()
             
             for row in stats_results:
-                order_stats_map[row[0]] = {
+                video_stats_map[row[0]] = {
                     'actualCost': float(row[1]) if row[1] else 0,
                     'playCount': int(row[2]) if row[2] else 0,
                     'likeCount': int(row[3]) if row[3] else 0,
@@ -241,20 +241,21 @@ def get_task_page():
                     'shareCount': int(row[5]) if row[5] else 0,
                     'followCount': int(row[6]) if row[6] else 0,
                     'dpTargetConvertCnt': int(row[7]) if row[7] else 0,
-                    'customConvertCost': float(row[8]) if row[8] else 0,  # 转化成本（前端期望customConvertCost）
-                    'avg5sRate': float(row[9]) if row[9] else 0,  # 5S完播率
+                    'customConvertCost': float(row[8]) if row[8] else 0,
+                    'avg5sRate': float(row[9]) if row[9] else 0,
                 }
         
         # 组装返回数据
         records = []
         for row in results:
             order_id = row[4]  # order_id字段
-            stats = order_stats_map.get(order_id, {})
+            item_id = row[3]  # item_id字段
+            stats = video_stats_map.get(item_id, {})  # 使用视频维度的效果数据
             
-            # 计算结束时间：投放开始时间 + 投放时长
+            # 计算结束时间：创建时间 + 时长（考虑续费）
             order_end_time = None
             order_create_time = row[13]  # order_create_time
-            duration = row[7]  # duration (小时)
+            duration = row[7]  # duration (小时，包含续费后的总时长)
             if order_create_time and duration:
                 from datetime import timedelta
                 if isinstance(order_create_time, str):
@@ -265,7 +266,7 @@ def get_task_page():
                 'id': row[0],
                 'userId': row[1],
                 'accountId': row[2],
-                'itemId': row[3],
+                'itemId': item_id,
                 'orderId': order_id,
                 'status': row[5],
                 'budget': float(row[6]) if row[6] else 0,
@@ -586,30 +587,30 @@ def get_task_detail(task_id):
         if not row:
             return error_response('订单不存在', code=404)
         
-        # 查询订单的最新效果数据（使用order_id维度）
-        order_id = row[4]
+        # 查询视频维度的最新效果数据（使用预聚合表）
+        item_id = row[3]
         stats = {}
         
-        if order_id:
+        if item_id:
             stats_sql = text("""
                 SELECT 
-                    s.stat_cost, 
-                    s.total_play, 
-                    s.custom_like, 
-                    s.dy_comment, 
-                    s.dy_share, 
-                    s.dy_follow, 
-                    s.dp_target_convert_cnt,
-                    s.custom_convert_cost,
-                    s.play_duration_5s_rank
-                FROM douplus_order_stats s
-                WHERE s.order_id = :order_id
-                ORDER BY s.stat_time DESC
+                    v.total_cost,
+                    v.total_play,
+                    v.total_like,
+                    v.total_comment,
+                    v.total_share,
+                    v.total_follow,
+                    v.total_convert,
+                    v.avg_convert_cost,
+                    v.avg_5s_rank
+                FROM douplus_video_stats_agg v
+                WHERE v.item_id = :item_id
+                ORDER BY v.stat_time DESC
                 LIMIT 1
             """)
             
             stats_row = db.execute(stats_sql, {
-                'order_id': order_id
+                'item_id': item_id
             }).fetchone()
             
             if stats_row:
@@ -625,7 +626,7 @@ def get_task_detail(task_id):
                     'avg5sRate': float(stats_row[8]) if stats_row[8] else 0,
                 }
         
-        # 计算结束时间
+        # 直接使用API返回的order_end_time
         order_end_time = None
         order_create_time = row[13]
         duration = row[7]
@@ -640,8 +641,8 @@ def get_task_detail(task_id):
             'id': row[0],
             'userId': row[1],
             'accountId': row[2],
-            'itemId': row[3],  # item_id
-            'orderId': order_id,
+            'itemId': item_id,
+            'orderId': row[4],  # order_id
             'status': row[5],
             'budget': float(row[6]) if row[6] else 0,
             'duration': duration,
@@ -652,7 +653,7 @@ def get_task_detail(task_id):
             'accountAvatar': row[12],
             'orderCreateTime': row[13].isoformat() if row[13] else None,
             'orderStartTime': row[14].isoformat() if row[14] else None,
-            'orderEndTime': order_end_time.isoformat() if order_end_time else None,
+            'orderEndTime': order_end_time.isoformat() if order_end_time else None,  # 计算的结束时间
             'createTime': row[16].isoformat() if row[16] else None,
             'updateTime': row[17].isoformat() if row[17] else None,
             **stats

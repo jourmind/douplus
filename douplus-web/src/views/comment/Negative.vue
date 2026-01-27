@@ -20,7 +20,7 @@
         <el-table-column label="评论者" width="150">
           <template #default="{ row }">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <el-avatar :size="28" :src="row.avatar">{{ row.nickname?.charAt(0) }}</el-avatar>
+              <el-avatar :size="28" :src="convertToHttps(row.avatar)">{{ row.nickname?.charAt(0) }}</el-avatar>
               <span>{{ row.nickname }}</span>
             </div>
           </template>
@@ -48,6 +48,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { convertToHttps } from '@/utils/url'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(false)

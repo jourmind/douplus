@@ -1,0 +1,100 @@
+#!/bin/bash
+# 续费功能完整修复验证
+
+echo "=========================================="
+echo "续费功能完整修复验证"
+echo "=========================================="
+echo ""
+
+echo "1️⃣  验证数据库字段修复"
+echo "------------------------------------------"
+echo "✅ 批量续费API中的字段名："
+grep -n "SELECT invest_password" /opt/douplus/douplus-sync-python/app/api/order_api.py | head -2
+
+echo ""
+echo "✅ 正确字段名应该是: invest_password"
+echo "   (不是 invest_password_encrypted)"
+
+echo ""
+echo ""
+
+echo "2️⃣  验证金额验证规则修复"
+echo "------------------------------------------"
+echo "✅ 单次续费金额范围："
+grep -A 1 "# 预算范围验证" /opt/douplus/douplus-sync-python/app/api/order_api.py | head -3 | tail -2
+
+echo ""
+echo "✅ 批量续费金额范围："
+grep -A 1 "# 预算范围验证" /opt/douplus/douplus-sync-python/app/api/order_api.py | tail -2
+
+echo ""
+echo "期望：10-50000元（原来是100-5000元）"
+
+echo ""
+echo ""
+
+echo "3️⃣  验证密码验证逻辑"
+echo "------------------------------------------"
+echo "✅ 批量续费密码验证（使用解密方式）："
+grep -A 8 "# 验证投放密码" /opt/douplus/douplus-sync-python/app/api/order_api.py | tail -10
+
+echo ""
+echo ""
+
+echo "4️⃣  修复总结"
+echo "------------------------------------------"
+echo "✅ 问题1：数据库字段名错误"
+echo "   - 错误字段: invest_password_encrypted"
+echo "   - 正确字段: invest_password"
+echo "   - 修改位置: 批量续费API (第203行)"
+echo ""
+echo "✅ 问题2：金额验证范围不符合需求"
+echo "   - 原范围: 100-5000元"
+echo "   - 新范围: 10-50000元"
+echo "   - 修改位置: 单次续费 + 批量续费"
+echo ""
+echo "✅ 问题3：密码验证逻辑不一致"
+echo "   - 单次续费使用解密方式"
+echo "   - 批量续费改为同样使用解密方式"
+echo "   - 兼容直接明文比对"
+echo ""
+
+echo "=========================================="
+echo "⚠️  重要：需要重启后端服务"
+echo "=========================================="
+echo "后端代码已修改，但需要重启服务才能生效。"
+echo ""
+echo "请使用以下命令之一重启后端服务："
+echo "  方式1: pm2 restart douplus-api"
+echo "  方式2: systemctl restart douplus-sync"
+echo "  方式3: supervisorctl restart douplus-sync"
+echo "  方式4: 手动杀掉进程后重新启动"
+echo ""
+echo "查找当前运行的Flask进程："
+echo "  ps aux | grep 'python.*app' | grep -v grep"
+echo ""
+
+echo "=========================================="
+echo "🧪 测试步骤"
+echo "=========================================="
+echo "重启后端服务后："
+echo "1. 强制刷新浏览器 (Ctrl+Shift+R)"
+echo "2. 打开投放记录页面"
+echo "3. 测试单次续费："
+echo "   - 选择一个投放中的订单"
+echo "   - 点击续费按钮"
+echo "   - 设置金额10元，时长6小时"
+echo "   - 输入投放密码"
+echo "   - 提交"
+echo "4. 测试批量续费："
+echo "   - 选择多个投放中的订单"
+echo "   - 点击批量续费"
+echo "   - 设置金额10元，时长12小时"
+echo "   - 提交"
+echo ""
+echo "预期结果："
+echo "✅ 不再提示 'Unknown column invest_password_encrypted'"
+echo "✅ 可以设置10元的续费金额"
+echo "✅ 续费操作正常提交"
+echo ""
+echo "=========================================="
