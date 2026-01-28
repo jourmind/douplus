@@ -27,6 +27,7 @@ from . import stats_api
 from . import query_api
 from . import account_api
 from . import order_api
+from . import export_api
 
 def register_blueprints(app):
     """注册所有API蓝图"""

@@ -181,7 +181,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import type { DouplusTaskVO } from '@/api/types'
-import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus, refreshAccountStats } from '@/api/douplus'
+import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus, refreshAccountStats, exportTaskData } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 import { OrderTable, OrderFilters, SortCascader, RenewDialog, BatchRenewDialog } from '@/components/order'
 import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
@@ -318,8 +318,53 @@ const handleSortChange = () => {
 }
 
 // 导出数据
-const exportData = () => {
-  ElMessage.info('导出功能开发中')
+const exportData = async () => {
+  try {
+    const params: any = {}
+    
+    // 添加筛选条件
+    if (filters.value.status) params.status = filters.value.status
+    if (filters.value.accountId) params.accountId = filters.value.accountId
+    if (filters.value.keyword) params.keyword = filters.value.keyword
+    if (filters.value.dateRange && filters.value.dateRange.length === 2) {
+      params.startDate = filters.value.dateRange[0]
+      params.endDate = filters.value.dateRange[1]
+    }
+    
+    ElMessage.info('正在导出数据，请稍候...')
+    
+    const response = await exportTaskData(params)
+    
+    if (!response.ok) {
+      throw new Error('导出失败')
+    }
+    
+    // 获取文件名
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = '订单数据.xlsx'
+    if (contentDisposition) {
+      const matches = /filename="(.+)"/.exec(contentDisposition)
+      if (matches && matches[1]) {
+        filename = decodeURIComponent(matches[1])
+      }
+    }
+    
+    // 下载文件
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success('导出成功')
+  } catch (error: any) {
+    console.error('导出失败', error)
+    ElMessage.error(error.message || '导出失败')
+  }
 }
 
 // 加载任务列表 - 一次性获取全部数据

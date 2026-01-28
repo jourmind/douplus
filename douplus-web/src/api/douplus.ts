@@ -164,3 +164,33 @@ export const getVideoTitles = (params?: {
 }) => {
   return get<{label: string, value: string}[]>('/douplus/video/titles', params)
 }
+
+/**
+ * 导出订单数据为Excel
+ */
+export const exportTaskData = (params: {
+  status?: string
+  accountId?: number
+  keyword?: string
+  startDate?: string
+  endDate?: string
+}) => {
+  // 构建查询字符串
+  const queryParams = new URLSearchParams()
+  if (params.status) queryParams.append('status', params.status)
+  if (params.accountId) queryParams.append('accountId', params.accountId.toString())
+  if (params.keyword) queryParams.append('keyword', params.keyword)
+  if (params.startDate) queryParams.append('startDate', params.startDate)
+  if (params.endDate) queryParams.append('endDate', params.endDate)
+  
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+  const token = localStorage.getItem('token')
+  
+  // 使用原生fetch下载文件
+  return fetch(`${baseURL}/api/douplus/task/export?${queryParams.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+}

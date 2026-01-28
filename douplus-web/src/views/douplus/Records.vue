@@ -50,6 +50,7 @@
       ref="orderListRef"
       :show-member-filter="true"
       :show-account-column="true"
+      @export="handleExportData"
     />
     
     <!-- 同步任务详情弹窗 -->
@@ -139,7 +140,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, TopRight, Loading } from '@element-plus/icons-vue'
 import { OrderListView } from '@/components/order'
-import { refreshAccountStats } from '@/api/douplus'
+import { refreshAccountStats, exportTaskData } from '@/api/douplus'
 
 const router = useRouter()
 const syncing = ref(false)
@@ -378,6 +379,58 @@ onUnmounted(() => {
   // 组件销毁时清除定时器
   stopPolling()
 })
+
+// 导出数据
+const handleExportData = async () => {
+  try {
+    // 获取当前的筛选条件
+    const filters = orderListRef.value?.filters || {}
+    
+    const params: any = {}
+    if (filters.status) params.status = filters.status
+    if (filters.memberId) params.accountId = filters.memberId
+    if (filters.keyword) params.keyword = filters.keyword
+    if (filters.dateRange && filters.dateRange.length === 2) {
+      params.startDate = filters.dateRange[0]
+      params.endDate = filters.dateRange[1]
+    }
+    
+    ElMessage.info('正在导出数据，请稍候...')
+    
+    const response = await exportTaskData(params)
+    
+    if (!response.ok) {
+      throw new Error('导出失败')
+    }
+    
+    // 获取文件名
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = '订单数据.xlsx'
+    if (contentDisposition) {
+      const matches = /filename="(.+)"/.exec(contentDisposition)
+      if (matches && matches[1]) {
+        filename = decodeURIComponent(matches[1])
+      }
+    }
+    
+    // 下载文件
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success('导出成功')
+  } catch (error: any) {
+    console.error('导出失败', error)
+    ElMessage.error(error.message || '导出失败')
+  }
+}
+
 </script>
 
 <style scoped lang="scss">
