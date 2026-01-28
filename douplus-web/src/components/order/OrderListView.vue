@@ -261,8 +261,11 @@ const loadTasks = async () => {
     // 如果传入了accountId，添加到筛选条件
     if (props.accountId) {
       params.accountId = props.accountId
+    } else if (filters.value.memberId) {
+      // 筛选器中的memberId就是accountId
+      params.accountId = filters.value.memberId
     } else if (filters.value.accountId) {
-      // 否则使用筛选器中的accountId
+      // 兼容旧代码
       params.accountId = filters.value.accountId
     }
     
@@ -497,9 +500,10 @@ const formatTargetType = (targetType: string) => {
   return typeMap[targetType] || targetType || '-'
 }
 
-// 暴露刷新方法给父组件
+// 暴露刷新方法和筛选条件给父组件
 defineExpose({
-  refresh: loadTasks
+  refresh: loadTasks,
+  filters
 })
 
 // 初始化

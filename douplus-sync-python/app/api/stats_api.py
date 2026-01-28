@@ -274,3 +274,66 @@ def get_video_rankings():
     # 这里返回空列表，待后续实现
     return paginated_response([], 0, page_num, page_size)
 
+
+@stats_bp.route('/stats/refresh/<int:account_id>', methods=['POST'])
+@require_auth
+def refresh_account_stats(account_id):
+    """
+    刷新指定账号的效果数据
+    
+    手动触发单个账号的效果数据同步任务
+    适用于用户在投放期间需要实时查看最新数据
+    
+    Args:
+        account_id: 抖音账号ID
+    
+    Returns:
+        同步的订单数量
+    """
+    user_id = request.user_id
+    
+    db = SessionLocal()
+    try:
+        # 验证账号归属
+        account_check_sql = text("""
+            SELECT id FROM douyin_account 
+            WHERE id = :account_id AND user_id = :user_id AND deleted = 0
+        """)
+        account_exists = db.execute(account_check_sql, {
+            'account_id': account_id,
+            'user_id': user_id
+        }).fetchone()
+        
+        if not account_exists:
+            return error_response('账号不存在或已解绑', 404)
+        
+        # 调用同步任务
+        from app.tasks.stats_sync import sync_single_account_stats
+        
+        try:
+            sync_single_account_stats(account_id)
+            
+            # 查询该账号有多少订单有效果数据
+            count_sql = text("""
+                SELECT COUNT(*) 
+                FROM douplus_order_stats s
+                INNER JOIN douplus_order o ON s.order_id = o.order_id
+                WHERE o.account_id = :account_id
+            """)
+            count = db.execute(count_sql, {'account_id': account_id}).scalar()
+            
+            return success_response({
+                'count': count or 0,
+                'message': f'成功刷新 {count or 0} 个订单的效果数据'
+            })
+            
+        except Exception as e:
+            logger.error(f"同步效果数据失败: account_id={account_id}, error={e}")
+            return error_response(f'同步失败: {str(e)}')
+            
+    except Exception as e:
+        logger.error(f"刷新效果数据失败: {str(e)}")
+        return error_response(str(e))
+    finally:
+        db.close()
+

@@ -18,8 +18,8 @@
             <el-icon><Refresh /></el-icon> 同步历史订单
           </template>
         </el-button>
-        <el-button type="primary" class="hot-btn" @click="goToCreate">
-          去上热门 <el-icon><TopRight /></el-icon>
+        <el-button type="warning" :loading="refreshingStats" @click="handleRefreshStats">
+          <el-icon><Refresh /></el-icon> 刷新效果数据
         </el-button>
       </div>
     </div>
@@ -139,9 +139,11 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, TopRight, Loading } from '@element-plus/icons-vue'
 import { OrderListView } from '@/components/order'
+import { refreshAccountStats } from '@/api/douplus'
 
 const router = useRouter()
 const syncing = ref(false)
+const refreshingStats = ref(false)  // 刷新效果数据loading状态
 const orderListRef = ref<any>(null)
 const showSyncDialog = ref(false)
 const syncTask = ref<any>(null)
@@ -246,6 +248,36 @@ const stopPolling = () => {
   if (pollingTimer) {
     clearInterval(pollingTimer)
     pollingTimer = null
+  }
+}
+
+// 刷新效果数据
+const handleRefreshStats = async () => {
+  // 从OrderListView组件的filters中获取选中的账号ID
+  const selectedAccountId = orderListRef.value?.filters?.memberId
+  
+  if (!selectedAccountId) {
+    ElMessage.warning('请先选择要刷新数据的账号')
+    return
+  }
+  
+  try {
+    refreshingStats.value = true
+    const res = await refreshAccountStats(selectedAccountId)
+    
+    if (res.code === 200) {
+      ElMessage.success(`成功刷新 ${res.data?.count || 0} 个订单的效果数据`)
+      // 重新加载列表
+      if (orderListRef.value) {
+        orderListRef.value.refresh()
+      }
+    } else {
+      ElMessage.error(res.message || '刷新效果数据失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '刷新效果数据失败')
+  } finally {
+    refreshingStats.value = false
   }
 }
 

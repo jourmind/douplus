@@ -8,8 +8,8 @@
         <el-button type="success" :loading="syncing" @click="handleSyncOrders">
           <el-icon><Refresh /></el-icon> 同步历史订单
         </el-button>
-        <el-button type="primary" class="hot-btn">
-          去上热门 <el-icon><TopRight /></el-icon>
+        <el-button type="warning" :loading="refreshingStats" @click="handleRefreshStats">
+          <el-icon><Refresh /></el-icon> 刷新效果数据
         </el-button>
       </div>
     </div>
@@ -181,7 +181,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { TopRight, Refresh, Loading, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import type { DouplusTaskVO } from '@/api/types'
-import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus } from '@/api/douplus'
+import { getTaskPage, cancelTask as cancelTaskApi, deleteTask as deleteTaskApi, getTaskDetail, renewTask, syncAllOrders, getSyncStatus, refreshAccountStats } from '@/api/douplus'
 import { getAccountList } from '@/api/account'
 import { OrderTable, OrderFilters, SortCascader, RenewDialog, BatchRenewDialog } from '@/components/order'
 import type { OrderFiltersType, MemberOption, SortOption } from '@/components/order'
@@ -203,6 +203,7 @@ const renewTask = ref<any>(null)
 const renewMode = ref<'renew' | 'reorder'>('renew')
 const renewDialogRef = ref<any>(null)
 const syncing = ref(false)
+const refreshingStats = ref(false)  // 刷新效果数据loading状态
 const syncMessage = ref('')
 const syncDialogVisible = ref(false)
 const syncStatus = ref<'idle' | 'syncing' | 'completed' | 'error'>('idle')
@@ -681,6 +682,34 @@ const closeSyncDialog = () => {
   syncMessage.value = ''
   syncCount.value = 0
   syncProgress.value = 0
+}
+
+// 刷新效果数据
+const handleRefreshStats = async () => {
+  // 检查是否有选中的账号
+  const selectedAccountId = filters.value.memberId
+  
+  if (!selectedAccountId) {
+    ElMessage.warning('请先选择要刷新数据的账号')
+    return
+  }
+  
+  try {
+    refreshingStats.value = true
+    const res = await refreshAccountStats(selectedAccountId)
+    
+    if (res.code === 200) {
+      ElMessage.success(`成功刷新 ${res.data?.count || 0} 个订单的效果数据`)
+      // 重新加载列表
+      await loadTasks()
+    } else {
+      ElMessage.error(res.message || '刷新效果数据失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '刷新效果数据失败')
+  } finally {
+    refreshingStats.value = false
+  }
 }
 
 onMounted(() => {

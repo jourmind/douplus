@@ -150,6 +150,13 @@ export const getSyncStatus = () => {
 }
 
 /**
+ * 刷新单个账号的效果数据
+ */
+export const refreshAccountStats = (accountId: number) => {
+  return post<{count: number}>(`/douplus/stats/refresh/${accountId}`)
+}
+
+/**
  * 获取视频标题列表（用于筛选器下拉选择）
  */
 export const getVideoTitles = (params?: {

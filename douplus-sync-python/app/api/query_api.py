@@ -201,35 +201,35 @@ def get_task_page():
         
         results = db.execute(text(data_sql), params).fetchall()
         
-        # 获取效果数据（从视频预聚合表，按item_id维度）
-        item_ids = [row[3] for row in results if row[3]]  # item_id字段
+        # 获取效果数据（从订单效果数据表，按order_id维度）
+        order_ids = [row[4] for row in results if row[4]]  # order_id字段
         video_stats_map = {}
         
-        if item_ids:
-            # 查询视频维度的最新效果数据（使用预聚合表）
+        if order_ids:
+            # 查询订单维度的最新效果数据
             stats_sql = text("""
                 SELECT 
-                    v.item_id,
-                    v.total_cost,
-                    v.total_play,
-                    v.total_like,
-                    v.total_comment,
-                    v.total_share,
-                    v.total_follow,
-                    v.total_convert,
-                    v.avg_convert_cost,
-                    v.avg_5s_rank
-                FROM douplus_video_stats_agg v
+                    s.order_id,
+                    s.stat_cost,
+                    s.total_play,
+                    s.custom_like,
+                    s.dy_comment,
+                    s.dy_share,
+                    s.dy_follow,
+                    s.dp_target_convert_cnt,
+                    s.custom_convert_cost,
+                    s.play_duration_5s_rank
+                FROM douplus_order_stats s
                 INNER JOIN (
-                    SELECT item_id, MAX(stat_time) as max_time
-                    FROM douplus_video_stats_agg
-                    WHERE item_id IN :item_ids
-                    GROUP BY item_id
-                ) latest ON v.item_id = latest.item_id AND v.stat_time = latest.max_time
+                    SELECT order_id, MAX(stat_time) as max_time
+                    FROM douplus_order_stats
+                    WHERE order_id IN :order_ids
+                    GROUP BY order_id
+                ) latest ON s.order_id = latest.order_id AND s.stat_time = latest.max_time
             """)
             
             stats_results = db.execute(stats_sql, {
-                'item_ids': tuple(item_ids)
+                'order_ids': tuple(order_ids)
             }).fetchall()
             
             for row in stats_results:
@@ -250,7 +250,7 @@ def get_task_page():
         for row in results:
             order_id = row[4]  # order_id字段
             item_id = row[3]  # item_id字段
-            stats = video_stats_map.get(item_id, {})  # 使用视频维度的效果数据
+            stats = video_stats_map.get(order_id, {})  # 使用订单维度的效果数据
             
             # 计算结束时间：创建时间 + 时长（考虑续费）
             order_end_time = None

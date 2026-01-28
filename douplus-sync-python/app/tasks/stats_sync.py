@@ -60,15 +60,29 @@ class StatsSyncTask(Task):
             client = DouyinClient(access_token)
             
             try:
-                # 4. 调用效果报告API
-                begin_time = (datetime.now() - timedelta(days=settings.SYNC_INCREMENTAL_DAYS)).strftime("%Y-%m-%d")
-                end_time = datetime.now().strftime("%Y-%m-%d")
+                # 4. 调用效果报告API（按订单ID批量查询，避免时间范围查询漏数据）
+                # stat_time参数设置为覆盖所有可能的时间范围
+                current_month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+                current_month_end = (datetime.now() + timedelta(days=32)).replace(day=1).strftime("%Y-%m-%d")
                 
-                stats_dict = client.get_order_report(
-                    aweme_sec_uid=account.aweme_sec_uid,
-                    begin_time=begin_time,
-                    end_time=end_time
-                )
+                # 提取订单ID列表
+                order_ids = [o.order_id for o in orders]
+                
+                # API限制：每次最多查询100个订单，需要分批查询
+                batch_size = 100
+                stats_dict = {}
+                
+                for i in range(0, len(order_ids), batch_size):
+                    batch = order_ids[i:i+batch_size]
+                    logger.info(f"查询第{i//batch_size + 1}批订单效果数据: {len(batch)}个订单")
+                    
+                    batch_stats = client.get_order_report(
+                        aweme_sec_uid=account.aweme_sec_uid,
+                        begin_time=current_month_start,
+                        end_time=current_month_end,
+                        order_ids=batch
+                    )
+                    stats_dict.update(batch_stats)
                 
                 if not stats_dict:
                     logger.info(f"账号{account_id}未获取到效果数据")

@@ -135,34 +135,34 @@ class DouyinClient:
         """
         endpoint = "/douplus/order/report/"
         
-        # 根据官方文档，使用GET方法，参数通过query string传递
-        params = {
+        # 根据官方文档，使用POST方法，参数通过request body传递
+        body = {
             "aweme_sec_uid": aweme_sec_uid,
             "group_by": ["GROUP_BY_AD_ID"]  # 按订单分组
         }
         
         # 时间范围
         if begin_time and end_time:
-            params["stat_time"] = {
+            body["stat_time"] = {
                 "begin_time": begin_time,
                 "end_time": end_time
             }
         
         # 订单ID过滤
         if order_ids:
-            params["filter"] = {
+            body["filter"] = {
                 "order_ids": [int(oid) for oid in order_ids]
             }
         
-        logger.info(f"调用效果报告API: aweme_sec_uid={aweme_sec_uid}, "
+        logger.info(f"调用效果报告API(POST): aweme_sec_uid={aweme_sec_uid}, "
                    f"order_count={len(order_ids) if order_ids else 'all'}, "
                    f"time_range={begin_time}~{end_time}")
         
-        data = self._request("GET", endpoint, params=params)
+        data = self._request("GET", endpoint, params=body)
         
         # 解析返回数据
+        # 官方确认：正确结构为 data.order_metrics，不是 data.data
         result = {}
-        # 注意：_request方法已经返回了data["data"]，所以这里直接获取order_metrics
         for item in data.get("order_metrics", []):
             dimension = item.get("dimension_data", {})
             metrics = item.get("metrics_data", {})
