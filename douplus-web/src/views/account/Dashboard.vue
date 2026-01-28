@@ -144,6 +144,7 @@
 
       <!-- 使用统一的订单列表组件 -->
       <OrderListView 
+        ref="orderListRef"
         :account-id="accountId"
         :show-member-filter="false"
         :show-account-column="false"
@@ -166,7 +167,7 @@ import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getAccountById } from '@/api/account'
-import { getAccountStats, getVideoStatsByAccount } from '@/api/douplus'
+import { getAccountStats, getVideoStatsByAccount, exportTaskData } from '@/api/douplus'
 import type { DouyinAccount } from '@/api/types'
 import * as echarts from 'echarts'
 import { TopRight, ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
@@ -181,6 +182,7 @@ const account = ref<DouyinAccount | null>(null)
 const activeNav = ref('overview')
 const dataPeriod = ref('all')
 const chartRef = ref<HTMLElement | null>(null)
+const orderListRef = ref<any>(null)
 
 // 视频排行榜相关
 const videoStats = ref<any[]>([])
@@ -188,8 +190,59 @@ const videoStatsLoading = ref(false)
 const rankingSort = ref('cost')
 
 // 导出订单
-const exportOrders = () => {
-  ElMessage.info('导出功能开发中')
+const exportOrders = async () => {
+  try {
+    // 获取当前的筛选条件
+    const filters = orderListRef.value?.filters || {}
+    
+    const params: any = {
+      accountId: accountId  // Dashboard页面固定当前账号
+    }
+    
+    // 添加其他筛选条件
+    if (filters.status) params.status = filters.status
+    if (filters.keyword) params.keyword = filters.keyword
+    if (filters.dateRange && filters.dateRange.length === 2) {
+      params.startDate = filters.dateRange[0]
+      params.endDate = filters.dateRange[1]
+    }
+    
+    ElMessage.info('正在导出数据，请稍候...')
+    
+    const response = await exportTaskData(params)
+    
+    if (!response.ok) {
+      throw new Error('导出失败')
+    }
+    
+    // 获取文件名
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = '订单数据.xlsx'
+    if (contentDisposition) {
+      // 支持两种格式：filename*=UTF-8''xxx 和 filename="xxx"
+      const matches = /filename\*=UTF-8''(.+)/.exec(contentDisposition) ||
+                     /filename="(.+)"/.exec(contentDisposition)
+      if (matches && matches[1]) {
+        filename = decodeURIComponent(matches[1])
+      }
+    }
+    
+    // 下载文件
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success('导出成功')
+  } catch (error: any) {
+    console.error('导出失败', error)
+    ElMessage.error(error.message || '导出失败')
+  }
 }
 
 const navItems = [
