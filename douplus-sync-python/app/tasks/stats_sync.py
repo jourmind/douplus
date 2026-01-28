@@ -102,6 +102,14 @@ class StatsSyncTask(Task):
                 db.commit()
                 logger.info(f"账号{account_id}效果数据同步完成: 共{total_saved}条")
                 
+                # 【预聚合优化】同步完成后更新订单预聚合表，提升查询性能
+                try:
+                    from app.tasks.order_agg import aggregate_single_account_orders
+                    aggregate_single_account_orders(account_id)
+                except Exception as e:
+                    logger.error(f"账号{account_id}订单预聚合失败: {e}")
+                    # 预聚合失败不影响主流程
+                
             finally:
                 client.close()
                 

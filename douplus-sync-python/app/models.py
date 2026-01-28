@@ -151,6 +151,37 @@ class DouplusOrderStats(Base):
     update_time = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class DouplusOrderAgg(Base):
+    """DOU+订单维度预聚合表"""
+    __tablename__ = 'douplus_order_agg'
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(String(64), unique=True, nullable=False, index=True)
+    item_id = Column(String(64), nullable=False, index=True)
+    account_id = Column(BigInteger, nullable=False, index=True)
+    
+    # 原始指标
+    total_cost = Column(DECIMAL(10, 2), default=0)
+    total_play = Column(Integer, default=0)
+    total_like = Column(Integer, default=0)
+    total_comment = Column(Integer, default=0)
+    total_share = Column(Integer, default=0)
+    total_follow = Column(Integer, default=0)
+    total_convert = Column(Integer, default=0)
+    play_duration_5s = Column(Float, default=0)
+    
+    # 预聚合计算指标
+    play_per_100_cost = Column(DECIMAL(10, 2), default=0, index=True)  # 百播放量
+    avg_convert_cost = Column(DECIMAL(10, 2), index=True)  # 转化成本(可为NULL)
+    share_rate = Column(DECIMAL(10, 4), default=0)  # 百转发率
+    like_rate = Column(DECIMAL(10, 4), default=0)  # 点赞比
+    follow_rate = Column(DECIMAL(10, 4), default=0)  # 转发比
+    
+    stat_time = Column(DateTime, nullable=False)
+    create_time = Column(DateTime, default=datetime.now)
+    update_time = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class DouplusVideoStatsAgg(Base):
     """视频维度效果预聚合表"""
     __tablename__ = 'douplus_video_stats_agg'

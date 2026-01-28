@@ -122,37 +122,33 @@ def get_task_page():
         order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
         
         if need_join_stats:
-            # 需要JOIN预聚合表进行排序（按视频维度）
-            # 排序字段映射
-            # 注意：前端'playCount'在SortCascader中实际指百播放量（播放量/消耗*100），而不是播放量
+            # 需要JOIN订单预聚合表进行排序（按订单维度）
+            # 排序字段映射到预聚合表字段
+            # 注意：前端'playCount'实际指百播放量，'costPerPlay'实际指转化成本
             
             # 转化成本排序：空值处理根据排序方向决定
-            # DESC: 空值用NULL（自动排最后） 或者用负数
-            # ASC: 空值用NULL（自动排最前） 或者用大数
             if sort_field == 'costPerPlay':
                 if sort_order.lower() == 'desc':
-                    # 降序：空值应该排最后，用负数或NULL
-                    cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE NULL END'
+                    # 降序：空值排最后
+                    sort_column = 'COALESCE(oa.avg_convert_cost, -1)'
                 else:
-                    # 升序：空值应该排最后，用大数
-                    cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE 999999 END'
+                    # 升序：空值排最后
+                    sort_column = 'COALESCE(oa.avg_convert_cost, 999999)'
             else:
-                cost_per_play_expr = 'CASE WHEN v.total_convert > 0 THEN v.total_cost / v.total_convert ELSE 0 END'
+                # 其他字段直接使用预聚合表的字段
+                stats_field_mapping = {
+                    'playCount': 'oa.play_per_100_cost',  # 百播放量
+                    'actualCost': 'oa.total_cost',
+                    'likeCount': 'oa.total_like',
+                    'shareCount': 'oa.total_share',
+                    'commentCount': 'oa.total_comment',
+                    'followCount': 'oa.total_follow',
+                    'dpTargetConvertCnt': 'oa.total_convert',
+                    'shareRate': 'oa.share_rate'  # 百转发率
+                }
+                sort_column = stats_field_mapping.get(sort_field, 'oa.total_cost')
             
-            stats_field_mapping = {
-                'playCount': 'CASE WHEN v.total_cost > 0 THEN (v.total_play / v.total_cost * 100) ELSE 0 END',  # 百播放量
-                'actualCost': 'v.total_cost',
-                'likeCount': 'v.total_like',
-                'shareCount': 'v.total_share',
-                'commentCount': 'v.total_comment',
-                'followCount': 'v.total_follow',
-                'dpTargetConvertCnt': 'v.total_convert',
-                'costPerPlay': cost_per_play_expr,  # 转化成本（动态处理空值）
-                'shareRate': 'CASE WHEN v.total_play > 0 THEN (v.total_share / v.total_play * 100) ELSE 0 END'  # 百转发率
-            }
-            sort_column = stats_field_mapping.get(sort_field, 'v.total_cost')
-            
-            # LEFT JOIN预聚合表（取最新数据），INNER JOIN账号表（过滤已解绑）
+            # LEFT JOIN订单预聚合表（无需子查询），INNER JOIN账号表（过滤已解绑）
             data_sql = f"""
                 SELECT 
                     o.id, o.user_id, o.account_id, o.item_id, o.order_id,
@@ -162,16 +158,7 @@ def get_task_page():
                     o.create_time, o.update_time
                 FROM douplus_order o
                 INNER JOIN douyin_account a ON o.account_id = a.id
-                LEFT JOIN (
-                    SELECT v1.item_id, v1.total_cost, v1.total_play, v1.total_like, 
-                           v1.total_share, v1.total_comment, v1.total_follow, v1.total_convert
-                    FROM douplus_video_stats_agg v1
-                    INNER JOIN (
-                        SELECT item_id, MAX(stat_time) as max_time
-                        FROM douplus_video_stats_agg
-                        GROUP BY item_id
-                    ) v2 ON v1.item_id = v2.item_id AND v1.stat_time = v2.max_time
-                ) v ON o.item_id = v.item_id
+                LEFT JOIN douplus_order_agg oa ON o.order_id = oa.order_id
                 WHERE {where_clause}
                 ORDER BY {sort_column} {order_direction}
                 LIMIT :limit OFFSET :offset
@@ -201,31 +188,26 @@ def get_task_page():
         
         results = db.execute(text(data_sql), params).fetchall()
         
-        # 获取效果数据（从订单效果数据表，按order_id维度）
+        # 获取效果数据（从订单预聚合表）
         order_ids = [row[4] for row in results if row[4]]  # order_id字段
         video_stats_map = {}
         
         if order_ids:
-            # 查询订单维度的最新效果数据
+            # 查询订单维度的预聚合效果数据
             stats_sql = text("""
                 SELECT 
-                    s.order_id,
-                    s.stat_cost,
-                    s.total_play,
-                    s.custom_like,
-                    s.dy_comment,
-                    s.dy_share,
-                    s.dy_follow,
-                    s.dp_target_convert_cnt,
-                    s.custom_convert_cost,
-                    s.play_duration_5s_rank
-                FROM douplus_order_stats s
-                INNER JOIN (
-                    SELECT order_id, MAX(stat_time) as max_time
-                    FROM douplus_order_stats
-                    WHERE order_id IN :order_ids
-                    GROUP BY order_id
-                ) latest ON s.order_id = latest.order_id AND s.stat_time = latest.max_time
+                    oa.order_id,
+                    oa.total_cost,
+                    oa.total_play,
+                    oa.total_like,
+                    oa.total_comment,
+                    oa.total_share,
+                    oa.total_follow,
+                    oa.total_convert,
+                    oa.avg_convert_cost,
+                    oa.play_duration_5s
+                FROM douplus_order_agg oa
+                WHERE oa.order_id IN :order_ids
             """)
             
             stats_results = db.execute(stats_sql, {
