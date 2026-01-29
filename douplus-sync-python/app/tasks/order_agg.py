@@ -148,51 +148,61 @@ def aggregate_single_account_orders(account_id: int):
                 s.item_id,
                 o.account_id,
                 
-                SUM(s.stat_cost) as total_cost,
-                SUM(s.total_play) as total_play,
-                SUM(s.custom_like) as total_like,
-                SUM(s.dy_comment) as total_comment,
-                SUM(s.dy_share) as total_share,
-                SUM(s.dy_follow) as total_follow,
-                SUM(s.dp_target_convert_cnt) as total_convert,
-                AVG(s.play_duration_5s_rank) as play_duration_5s,
+                -- 原始指标：取最新值（因为API返回的是全量累计，不是增量）
+                s.stat_cost as total_cost,
+                s.total_play as total_play,
+                s.custom_like as total_like,
+                s.dy_comment as total_comment,
+                s.dy_share as total_share,
+                s.dy_follow as total_follow,
+                s.dp_target_convert_cnt as total_convert,
+                s.play_duration_5s_rank as play_duration_5s,
                 
+                -- 预聚合计算指标
                 CASE 
-                    WHEN SUM(s.stat_cost) > 0 
-                    THEN SUM(s.total_play) / SUM(s.stat_cost) * 100 
+                    WHEN s.stat_cost > 0 
+                    THEN s.total_play / s.stat_cost * 100 
                     ELSE 0 
                 END as play_per_100_cost,
                 
                 CASE 
-                    WHEN SUM(s.dp_target_convert_cnt) > 0 
-                    THEN SUM(s.stat_cost) / SUM(s.dp_target_convert_cnt)
+                    WHEN s.dp_target_convert_cnt > 0 
+                    THEN s.stat_cost / s.dp_target_convert_cnt
                     ELSE NULL 
                 END as avg_convert_cost,
                 
                 CASE 
-                    WHEN SUM(s.total_play) > 0 
-                    THEN SUM(s.dy_share) / SUM(s.total_play) * 100 
+                    WHEN s.total_play > 0 
+                    THEN s.dy_share / s.total_play * 100 
                     ELSE 0 
                 END as share_rate,
                 
                 CASE 
-                    WHEN SUM(s.total_play) > 0 
-                    THEN SUM(s.custom_like) / SUM(s.total_play)
+                    WHEN s.total_play > 0 
+                    THEN s.custom_like / s.total_play
                     ELSE 0 
                 END as like_rate,
                 
                 CASE 
-                    WHEN SUM(s.total_play) > 0 
-                    THEN SUM(s.dy_share) / SUM(s.total_play)
+                    WHEN s.total_play > 0 
+                    THEN s.dy_share / s.total_play
                     ELSE 0 
                 END as follow_rate,
                 
-                MAX(s.stat_time) as stat_time
+                s.stat_time as stat_time
                 
             FROM douplus_order_stats s
             INNER JOIN douplus_order o ON s.order_id = o.order_id
+            INNER JOIN (
+                -- 每个订单只取最新一条效果数据
+                SELECT order_id, MAX(stat_time) as max_stat_time
+                FROM douplus_order_stats
+                WHERE order_id IN (
+                    SELECT order_id FROM douplus_order WHERE account_id = :account_id
+                )
+                GROUP BY order_id
+            ) latest ON s.order_id = latest.order_id AND s.stat_time = latest.max_stat_time
             WHERE o.account_id = :account_id
-            GROUP BY s.order_id, s.item_id, o.account_id
             
             ON DUPLICATE KEY UPDATE
                 account_id = VALUES(account_id),

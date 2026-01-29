@@ -237,6 +237,7 @@ class OrderSyncTask(Task):
         stmt = stmt.on_duplicate_key_update(
             account_id=values["account_id"],  # 重要：更新account_id，支持账号重新绑定
             status=values["status"],
+            budget=values["budget"],  # 重要：更新预算，支持续费后同步最新预算
             aweme_title=values["aweme_title"],
             aweme_cover=values["aweme_cover"],
             sync_version=DouplusOrder.sync_version + 1,

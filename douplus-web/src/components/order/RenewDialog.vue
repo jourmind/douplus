@@ -66,7 +66,7 @@
             <div 
               v-for="item in DURATION_OPTIONS" 
               :key="item.value"
-              :class="['option-btn', { active: !customDuration && form.duration === item.value || (item.value === 0 && customDuration) }]"
+              :class="['option-btn', { active: !customDuration && form.duration === item.value || (item.value === -1 && customDuration) }]"
               @click="selectDuration(item.value)"
             >
               {{ item.label }}
@@ -75,7 +75,7 @@
           <div v-if="customDuration" class="custom-duration-row">
             <el-input-number 
               v-model="form.duration" 
-              :min="2" 
+              :min="0" 
               :max="720" 
               :step="12"
               style="width: 120px; margin-top: 10px;"
@@ -162,11 +162,12 @@ const BUDGET_OPTIONS = [
 
 // 时长选项（抖音API规则：0、2、6、12、24或12的倍数，最大720小时）
 const DURATION_OPTIONS = [
+  { label: '不延长', value: 0 },  // 仅续费预算，不延长时间
   { label: '2小时', value: 2 },
   { label: '6小时', value: 6 },
   { label: '12小时', value: 12 },
   { label: '24小时', value: 24 },
-  { label: '自定义', value: 0 }
+  { label: '自定义', value: -1 }  // 使用-1区分自定义模式，实际提交时用form.duration
 ]
 
 // 订单任务接口
@@ -250,7 +251,7 @@ watch(() => props.modelValue, (val) => {
     
     // 检查是否匹配预设选项
     customBudget.value = !BUDGET_OPTIONS.some(o => o.value === form.budget && o.value !== 0)
-    customDuration.value = !DURATION_OPTIONS.some(o => o.value === form.duration && o.value !== 0)
+    customDuration.value = !DURATION_OPTIONS.some(o => o.value === form.duration && o.value !== -1)
   }
 })
 
@@ -267,9 +268,9 @@ const selectBudget = (value: number) => {
 
 // 选择时长
 const selectDuration = (value: number) => {
-  if (value === 0) {
+  if (value === -1) {  // 自定义模式
     customDuration.value = true
-    form.duration = 2
+    form.duration = 12  // 默认值12小时，符合12的倍数规则
   } else {
     customDuration.value = false
     form.duration = value
