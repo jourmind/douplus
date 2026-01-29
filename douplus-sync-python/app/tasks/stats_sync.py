@@ -25,6 +25,9 @@ class StatsSyncTask(Task):
         
         Args:
             account_id: 账号ID
+            
+        Returns:
+            tuple: (成功数, 失败数)
         """
         db = get_db()
         try:
@@ -35,7 +38,7 @@ class StatsSyncTask(Task):
             
             if not account:
                 logger.warning(f"账号不存在: account_id={account_id}")
-                return
+                return (0, 1)
             
             # 2. 获取需要同步效果数据的订单(最近7天有更新的)
             cutoff_time = datetime.now() - timedelta(days=settings.SYNC_INCREMENTAL_DAYS)
@@ -46,7 +49,7 @@ class StatsSyncTask(Task):
             
             if not orders:
                 logger.info(f"账号{account_id}没有需要同步效果数据的订单")
-                return
+                return (0, 0)
             
             logger.info(f"账号{account_id}需要同步{len(orders)}个订单的效果数据")
             
@@ -55,7 +58,7 @@ class StatsSyncTask(Task):
                 access_token = decrypt_access_token(account.access_token)
             except Exception as e:
                 logger.error(f"解密token失败: account_id={account_id}, error={e}")
-                return
+                return (0, len(orders))
             
             client = DouyinClient(access_token)
             
@@ -86,7 +89,7 @@ class StatsSyncTask(Task):
                 
                 if not stats_dict:
                     logger.info(f"账号{account_id}未获取到效果数据")
-                    return
+                    return (0, len(orders))
                 
                 # 5. 保存效果数据
                 stat_time = get_current_window()
@@ -110,15 +113,29 @@ class StatsSyncTask(Task):
                     logger.error(f"账号{account_id}订单预聚合失败: {e}")
                     # 预聚合失败不影响主流程
                 
+                # 【预聚合优化】更新视频预聚合表，支持视频排行榜统计
+                try:
+                    from app.tasks.video_agg import VideoAggTask
+                    video_task = VideoAggTask()
+                    video_task.aggregate_video_stats()  # 聚合当前时间窗口
+                    logger.info(f"账号{account_id}视频预聚合完成")
+                except Exception as e:
+                    logger.error(f"账号{account_id}视频预聚合失败: {e}")
+                    # 预聚合失败不影响主流程
+                
+                return (total_saved, len(orders) - total_saved)
+                
             finally:
                 client.close()
                 
         except DouyinAPIError as e:
             logger.error(f"抖音API调用失败: account_id={account_id}, error={e}")
             db.rollback()
+            return (0, 1)
         except Exception as e:
             logger.error(f"效果数据同步异常: account_id={account_id}, error={e}", exc_info=True)
             db.rollback()
+            return (0, 1)
         finally:
             db.close()
     
@@ -205,6 +222,14 @@ def sync_all_accounts_stats():
 
 
 def sync_single_account_stats(account_id: int):
-    """同步单个账号的效果数据"""
+    """
+    同步单个账号的效果数据
+    
+    Args:
+        account_id: 账号ID
+        
+    Returns:
+        tuple: (成功数, 失败数)
+    """
     task = StatsSyncTask()
-    task.sync_account_stats(account_id)
+    return task.sync_account_stats(account_id)

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     SYNC_INCREMENTAL_DAYS: int = 7
     SYNC_FULL_DAYS: int = 90
     
+    # DOU+开发者配置（用于token刷新）
+    DOUPLUS_APP_ID: str = ""
+    DOUPLUS_APP_SECRET: str = ""
+    
     @property
     def database_url(self) -> str:
         """数据库连接URL"""

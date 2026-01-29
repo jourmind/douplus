@@ -215,6 +215,7 @@ class OrderSyncTask(Task):
         # 构建数据
         values = {
             "order_id": order_info.get("order_id"),
+            "task_id": order_info.get("task_id"),  # DOU+后台订单号(PC端可见)
             "item_id": item_info.get("aweme_item_id"),
             "account_id": account.id,
             "user_id": account.user_id,
@@ -326,14 +327,16 @@ def sync_single_account(account_id: int, sync_mode: str = "incremental", task_id
         # 更新明细状态为failed
         if detail:
             detail.status = 'failed'
-            detail.error_message = str(e)
+            detail.error_message = str(e)[:500]  # 限制错误信息长度
             detail.end_time = datetime.now()
             db.commit()
             
             # 更新主任务统计
             _update_task_progress(db, task_id)
         
-        raise
+        # ❌ 不再抛出异常，避免Worker崩溃
+        # 单个账号失败不应影响其他账号或整个系统
+        logger.warning(f"账号{account_id}同步失败已记录，继续处理其他账号")
     finally:
         db.close()
 

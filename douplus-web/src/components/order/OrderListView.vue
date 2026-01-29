@@ -76,7 +76,8 @@
       <div v-if="currentTask" class="task-detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="任务ID">{{ currentTask.id }}</el-descriptions-item>
-          <el-descriptions-item label="订单ID">{{ currentTask.orderId }}</el-descriptions-item>
+          <el-descriptions-item label="订单号（后台）">{{ currentTask.taskId || '暂无' }}</el-descriptions-item>
+          <el-descriptions-item label="订单ID（内部）">{{ currentTask.orderId }}</el-descriptions-item>
           <el-descriptions-item label="视频ID">{{ currentTask.itemId }}</el-descriptions-item>
           <el-descriptions-item label="账号ID">{{ currentTask.accountId }}</el-descriptions-item>
           <el-descriptions-item label="营销目标">{{ formatTargetType(currentTask.targetType) }}</el-descriptions-item>

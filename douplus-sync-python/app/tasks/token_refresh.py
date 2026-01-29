@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from app.models import SessionLocal
 from app.utils.crypto import encrypt_access_token
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,9 @@ def refresh_expiring_tokens():
         logger.info(f"发现 {len(accounts)} 个账号的Token需要刷新")
         
         # 获取配置
-        app_id = os.getenv('DOUPLUS_APP_ID')
-        app_secret = os.getenv('DOUPLUS_APP_SECRET')
+        settings = get_settings()
+        app_id = settings.DOUPLUS_APP_ID
+        app_secret = settings.DOUPLUS_APP_SECRET
         
         if not app_id or not app_secret:
             logger.error("缺少DOUPLUS_APP_ID或DOUPLUS_APP_SECRET配置")
@@ -177,8 +179,9 @@ def refresh_single_account_token(account_id: int):
             return {'success': False, 'message': '该账号没有refresh_token'}
         
         # 获取配置
-        app_id = os.getenv('DOUPLUS_APP_ID')
-        app_secret = os.getenv('DOUPLUS_APP_SECRET')
+        settings = get_settings()
+        app_id = settings.DOUPLUS_APP_ID
+        app_secret = settings.DOUPLUS_APP_SECRET
         
         if not app_id or not app_secret:
             return {'success': False, 'message': '系统配置错误'}

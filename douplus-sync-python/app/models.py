@@ -87,8 +87,7 @@ class DouplusOrder(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     order_id = Column(String(64), unique=True, nullable=False, index=True)
-    # task_id字段未在数据库中创建，暂时注释掉
-    # task_id = Column(String(64), index=True)
+    task_id = Column(String(64), index=True)  # DOU+后台订单号(PC端可见)
     item_id = Column(String(64), nullable=False, index=True)
     account_id = Column(BigInteger, nullable=False, index=True)
     user_id = Column(BigInteger, nullable=False)

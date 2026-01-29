@@ -32,7 +32,7 @@
           <div class="video-info">
             <span class="video-title">{{ row.videoTitle || row.itemId }}</span>
             <span v-if="showAccountColumn" class="account-name">{{ row.accountNickname || row.awemeNick }}</span>
-            <span class="order-time">{{ formatDate(row.createTime) }} 下单</span>
+            <span class="order-time">{{ formatDate(row.orderCreateTime) }} 下单</span>
           </div>
         </div>
       </template>
@@ -420,6 +420,7 @@ const formatDate = (dateString?: string) => {
   const day = date.getDate()
   const hours = date.getHours().toString().padStart(2, '0')
   const minutes = date.getMinutes().toString().padStart(2, '0')
+  // 注意：只显示到分钟，秒数被忽略（向下取整，不四舍五入）
   return `${date.getFullYear()}年${month.toString().padStart(2, '0')}月${day.toString().padStart(2, '0')}日 ${hours}:${minutes}`
 }
 

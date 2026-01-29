@@ -151,7 +151,7 @@ def get_task_page():
             # LEFT JOIN订单预聚合表（无需子查询），INNER JOIN账号表（过滤已解绑）
             data_sql = f"""
                 SELECT 
-                    o.id, o.user_id, o.account_id, o.item_id, o.order_id,
+                    o.id, o.user_id, o.account_id, o.item_id, o.order_id, o.task_id,
                     o.status, o.budget, o.duration, o.target_type,
                     o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
                     o.order_create_time, o.order_start_time, o.order_end_time,
@@ -174,7 +174,7 @@ def get_task_page():
             
             data_sql = f"""
                 SELECT 
-                    o.id, o.user_id, o.account_id, o.item_id, o.order_id,
+                    o.id, o.user_id, o.account_id, o.item_id, o.order_id, o.task_id,
                     o.status, o.budget, o.duration, o.target_type,
                     o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
                     o.order_create_time, o.order_start_time, o.order_end_time,
@@ -231,13 +231,14 @@ def get_task_page():
         records = []
         for row in results:
             order_id = row[4]  # order_id字段
-            item_id = row[3]  # item_id字段
+            task_id = row[5]   # task_id字段（DOU+后台订单号）
+            item_id = row[3]   # item_id字段
             stats = video_stats_map.get(order_id, {})  # 使用订单维度的效果数据
             
             # 计算结束时间：创建时间 + 时长（考虑续费）
             order_end_time = None
-            order_create_time = row[13]  # order_create_time
-            duration = row[7]  # duration (小时，包含续费后的总时长)
+            order_create_time = row[14]  # order_create_time
+            duration = row[8]  # duration (小时，包含续费后的总时长)
             if order_create_time and duration:
                 from datetime import timedelta
                 if isinstance(order_create_time, str):
@@ -250,19 +251,20 @@ def get_task_page():
                 'accountId': row[2],
                 'itemId': item_id,
                 'orderId': order_id,
-                'status': row[5],
-                'budget': float(row[6]) if row[6] else 0,
+                'taskId': task_id,  # DOU+后台订单号(PC端可见)
+                'status': row[6],
+                'budget': float(row[7]) if row[7] else 0,
                 'duration': duration,
-                'targetType': row[8],
-                'videoTitle': row[9],
-                'videoCoverUrl': row[10],
-                'accountNickname': row[11],
-                'accountAvatar': row[12],
-                'orderCreateTime': row[13].isoformat() if row[13] else None,
-                'orderStartTime': row[14].isoformat() if row[14] else None,
+                'targetType': row[9],
+                'videoTitle': row[10],
+                'videoCoverUrl': row[11],
+                'accountNickname': row[12],
+                'accountAvatar': row[13],
+                'orderCreateTime': row[14].isoformat() if row[14] else None,
+                'orderStartTime': row[15].isoformat() if row[15] else None,
                 'orderEndTime': order_end_time.isoformat() if order_end_time else None,  # 计算的结束时间
-                'createTime': row[16].isoformat() if row[16] else None,
-                'updateTime': row[17].isoformat() if row[17] else None,
+                'createTime': row[17].isoformat() if row[17] else None,
+                'updateTime': row[18].isoformat() if row[18] else None,
                 **stats
             }
             records.append(record)
@@ -552,7 +554,7 @@ def get_task_detail(task_id):
         # 查询订单基础信息
         order_sql = text("""
             SELECT 
-                o.id, o.user_id, o.account_id, o.item_id, o.order_id,
+                o.id, o.user_id, o.account_id, o.item_id, o.order_id, o.task_id,
                 o.status, o.budget, o.duration, o.target_type,
                 o.aweme_title, o.aweme_cover, o.aweme_nick, o.aweme_avatar,
                 o.order_create_time, o.order_start_time, o.order_end_time,
@@ -610,8 +612,8 @@ def get_task_detail(task_id):
         
         # 直接使用API返回的order_end_time
         order_end_time = None
-        order_create_time = row[13]
-        duration = row[7]
+        order_create_time = row[14]  # order_create_time (索引+1)
+        duration = row[8]  # duration (索引+1)
         if order_create_time and duration:
             from datetime import timedelta
             if isinstance(order_create_time, str):
@@ -625,19 +627,20 @@ def get_task_detail(task_id):
             'accountId': row[2],
             'itemId': item_id,
             'orderId': row[4],  # order_id
-            'status': row[5],
-            'budget': float(row[6]) if row[6] else 0,
+            'taskId': row[5],   # task_id (DOU+后台订单号)
+            'status': row[6],
+            'budget': float(row[7]) if row[7] else 0,
             'duration': duration,
-            'targetType': row[8],
-            'videoTitle': row[9],
-            'videoCoverUrl': row[10],
-            'accountNickname': row[11],
-            'accountAvatar': row[12],
-            'orderCreateTime': row[13].isoformat() if row[13] else None,
-            'orderStartTime': row[14].isoformat() if row[14] else None,
+            'targetType': row[9],
+            'videoTitle': row[10],
+            'videoCoverUrl': row[11],
+            'accountNickname': row[12],
+            'accountAvatar': row[13],
+            'orderCreateTime': row[14].isoformat() if row[14] else None,
+            'orderStartTime': row[15].isoformat() if row[15] else None,
             'orderEndTime': order_end_time.isoformat() if order_end_time else None,  # 计算的结束时间
-            'createTime': row[16].isoformat() if row[16] else None,
-            'updateTime': row[17].isoformat() if row[17] else None,
+            'createTime': row[17].isoformat() if row[17] else None,
+            'updateTime': row[18].isoformat() if row[18] else None,
             **stats
         }
         
