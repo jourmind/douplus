@@ -2,7 +2,7 @@
 # 测试所有API接口
 
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImVtYWlsIjoidGVzdEB0ZXN0LmNvbSIsImV4cCI6MTc2OTg1MTU4N30.8fIW6DWJa5Hk0YuvHRm9m6N-qVAaNvElhp3VqBh8Uyc"
-BASE_URL="https://42.194.181.242"
+BASE_URL="https://douplus.easymai.cn"
 
 echo "========================================="
 echo "测试所有API接口"

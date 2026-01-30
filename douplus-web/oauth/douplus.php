@@ -2,7 +2,7 @@
 /**
  * DOU+ 抖音OAuth授权回调处理
  * 
- * 回调地址: https://42.194.181.242/oauth/douplus.php
+ * 回调地址: https://douplus.easymai.cn/oauth/douplus.php
  * 
  * 部署位置：/opt/douplus/douplus-web/dist/oauth/douplus.php
  */
@@ -782,7 +782,7 @@ try {
             <?php endif; ?>
             <p class="message"><?php echo htmlspecialchars($message); ?><br>您现在可以关闭此页面，返回系统查看。</p>
             <div>
-                <a href="https://42.194.181.242/account/dashboard" class="btn btn-primary">返回账号管理</a>
+                <a href="https://douplus.easymai.cn/account/dashboard" class="btn btn-primary">返回账号管理</a>
                 <button onclick="window.close()" class="btn btn-secondary">关闭页面</button>
             </div>
             <p class="countdown">页面将在 <span id="countdown">5</span> 秒后自动跳转...</p>
@@ -794,7 +794,7 @@ try {
                     countdownEl.textContent = seconds;
                     if (seconds <= 0) {
                         clearInterval(timer);
-                        window.location.href = 'https://42.194.181.242/account/dashboard';
+                        window.location.href = 'https://douplus.easymai.cn/account/dashboard';
                     }
                 }, 1000);
             </script>
@@ -807,7 +807,7 @@ try {
                 <?php echo htmlspecialchars($error); ?>
             </div>
             <div>
-                <a href="https://42.194.181.242/account/dashboard" class="btn btn-primary">返回重试</a>
+                <a href="https://douplus.easymai.cn/account/dashboard" class="btn btn-primary">返回重试</a>
                 <button onclick="window.close()" class="btn btn-secondary">关闭页面</button>
             </div>
         <?php endif; ?>

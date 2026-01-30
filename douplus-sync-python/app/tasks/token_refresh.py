@@ -63,10 +63,14 @@ def refresh_expiring_tokens():
         
         # 遍历刷新
         for account in accounts:
-            account_id, open_id, nickname, refresh_token, expires_at = account
+            account_id, open_id, nickname, encrypted_refresh_token, expires_at = account
             
             try:
                 logger.info(f"开始刷新Token: account_id={account_id}, nickname={nickname}, expires_at={expires_at}")
+                
+                # 解密refresh_token（数据库中是Base64编码存储的）
+                from app.utils.crypto import decrypt_access_token
+                refresh_token = decrypt_access_token(encrypted_refresh_token)
                 
                 # 调用抖音API刷新token
                 refresh_url = 'https://ad.oceanengine.com/open_api/oauth2/refresh_token/'
@@ -104,7 +108,7 @@ def refresh_expiring_tokens():
                 # 更新数据库
                 update_sql = text("""
                     UPDATE douyin_account
-                    SET access_token_encrypted = :access_token,
+                    SET access_token = :access_token,
                         refresh_token = :refresh_token,
                         token_expires_at = :expires_at,
                         update_time = NOW()
@@ -173,10 +177,14 @@ def refresh_single_account_token(account_id: int):
         if not account:
             return {'success': False, 'message': '账号不存在'}
         
-        account_id, open_id, nickname, refresh_token, expires_at = account
+        account_id, open_id, nickname, encrypted_refresh_token, expires_at = account
         
-        if not refresh_token:
+        if not encrypted_refresh_token:
             return {'success': False, 'message': '该账号没有refresh_token'}
+        
+        # 解密refresh_token（数据库中是Base64编码存储的）
+        from app.utils.crypto import decrypt_access_token
+        refresh_token = decrypt_access_token(encrypted_refresh_token)
         
         # 获取配置
         settings = get_settings()
@@ -217,7 +225,7 @@ def refresh_single_account_token(account_id: int):
         
         update_sql = text("""
             UPDATE douyin_account
-            SET access_token_encrypted = :access_token,
+            SET access_token = :access_token,
                 refresh_token = :refresh_token,
                 token_expires_at = :expires_at,
                 update_time = NOW()

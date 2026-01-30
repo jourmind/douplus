@@ -192,7 +192,7 @@ def get_oauth_url():
     try:
         # 从环境变量获取配置
         app_id = os.getenv('DOUPLUS_APP_ID')
-        callback_url = os.getenv('DOUPLUS_CALLBACK_URL', 'https://42.194.181.242/oauth/douplus.php')
+        callback_url = os.getenv('DOUPLUS_CALLBACK_URL', 'https://douplus.easymai.cn/oauth/douplus.php')
         
         if not app_id:
             return error_response('OAuth配置缺失：未配置DOUPLUS_APP_ID', code=500)

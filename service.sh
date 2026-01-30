@@ -53,7 +53,7 @@ case "$1" in
         curl -s http://127.0.0.1:5000/api/douplus/task/sync-status | python3 -m json.tool
         echo ""
         echo "3. 通过Nginx访问（HTTP）:"
-        curl -s http://42.194.181.242/api/douplus/task/sync-status 2>&1 | head -5
+        curl -s http://douplus.easymai.cn/api/douplus/task/sync-status 2>&1 | head -5
         ;;
     
     *)
@@ -69,7 +69,7 @@ case "$1" in
         echo "  logs    - 实时查看日志"
         echo "  test    - 测试API接口"
         echo ""
-        echo "前端访问地址: https://42.194.181.242"
+        echo "前端访问地址: https://douplus.easymai.cn"
         exit 1
         ;;
 esac
