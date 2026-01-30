@@ -89,10 +89,11 @@ def get_task_page():
             where_conditions.append("o.account_id = :account_id")
             params['account_id'] = int(account_id)
         
-        # 新增：视频标题关键词搜索
+        # 优化：支持视频ID精确匹配或标题模糊搜索
         if keyword:
-            where_conditions.append("o.aweme_title LIKE :keyword")
-            params['keyword'] = f'%{keyword}%'
+            where_conditions.append("(o.item_id = :keyword OR o.aweme_title LIKE :keyword_like)")
+            params['keyword'] = keyword
+            params['keyword_like'] = f'%{keyword}%'
         
         # 时间范围筛选
         if start_date:
@@ -653,46 +654,15 @@ def get_task_detail(task_id):
         db.close()
 
 
-@query_bp.route('/video/titles', methods=['GET'])
-@require_auth
-def get_video_titles():
-    """
-    获取视频标题列表（用于筛选器下拉选择）
-    
-    参数：
-    - accountId: 账号ID（可选）
-    """
-    user_id = request.user_id
-    account_id = request.args.get('accountId')
-    
-    db = SessionLocal()
-    try:
-        # 构建查询条件
-        where_conditions = ["o.user_id = :user_id", "o.deleted = 0", "o.aweme_title IS NOT NULL"]
-        params = {'user_id': user_id}
-        
-        if account_id:
-            where_conditions.append("o.account_id = :account_id")
-            params['account_id'] = int(account_id)
-        
-        where_clause = " AND ".join(where_conditions)
-        
-        # 查询不重复的视频标题
-        sql = text(f"""
-            SELECT DISTINCT o.aweme_title
-            FROM douplus_order o
-            WHERE {where_clause}
-            ORDER BY o.aweme_title
-            LIMIT 100
-        """)
-        
-        results = db.execute(sql, params).fetchall()
-        titles = [{'label': row[0], 'value': row[0]} for row in results]
-        
-        return success_response(titles)
-        
-    except Exception as e:
-        logger.error(f"查询视频标题失败: {str(e)}")
-        return error_response(str(e))
-    finally:
-        db.close()
+# 注释掉不再使用的视频标题列表API
+# @query_bp.route('/video/titles', methods=['GET'])
+# @require_auth
+# def get_video_titles():
+#     """
+#     获取视频标题列表（用于筛选器下拉选择）
+#     已废弃：改用视频ID搜索输入框
+#     
+#     参数：
+#     - accountId: 账号ID（可选）
+#     """
+#     pass

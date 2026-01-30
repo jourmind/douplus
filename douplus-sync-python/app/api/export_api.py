@@ -68,9 +68,11 @@ def export_task_data():
             where_conditions.append("o.account_id = :account_id")
             params['account_id'] = int(account_id)
         
+        # 优化：支持视频ID精确匹配或标题模糊搜索
         if keyword:
-            where_conditions.append("o.aweme_title LIKE :keyword")
-            params['keyword'] = f'%{keyword}%'
+            where_conditions.append("(o.item_id = :keyword OR o.aweme_title LIKE :keyword_like)")
+            params['keyword'] = keyword
+            params['keyword_like'] = f'%{keyword}%'
         
         if start_date:
             where_conditions.append("DATE(o.order_create_time) >= :start_date")
